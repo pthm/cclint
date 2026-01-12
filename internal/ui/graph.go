@@ -407,8 +407,8 @@ func (m GraphModel) View() string {
 	var mainContent string
 
 	if m.showPreview {
-		// Split view: 50% tree, 50% preview
-		treeWidth := m.width * 50 / 100
+		// Split view: 40% tree, 60% preview
+		treeWidth := m.width * 40 / 100
 		previewWidth := m.width - treeWidth - 1 // -1 for separator
 
 		treeView := m.renderTreePane(treeWidth, contentHeight)
@@ -469,23 +469,14 @@ func (m *GraphModel) renderTreePane(width, height int) string {
 		endIdx = len(lines)
 	}
 
-	// Truncate lines to width
+	// Collect visible lines
 	var visibleLines []string
 	for i := startIdx; i < endIdx; i++ {
-		line := lines[i]
-		// Truncate if needed (accounting for ANSI codes is tricky, so just limit raw length)
-		if len(line) > width {
-			line = line[:width-1] + "…"
-		}
-		visibleLines = append(visibleLines, line)
+		visibleLines = append(visibleLines, lines[i])
 	}
 
-	// Pad to fill height
-	for i := len(visibleLines); i < height; i++ {
-		visibleLines = append(visibleLines, "")
-	}
-
-	return strings.Join(visibleLines, "\n")
+	// Use padLinesWithWidth to ensure full width and height
+	return m.padLinesWithWidth(visibleLines, width, height)
 }
 
 // renderPreview renders the file preview pane
@@ -570,14 +561,14 @@ func (m *GraphModel) renderPreview(width, height int) string {
 // renderPreviewPanes renders a two-pane preview: reference context (top) and file content (bottom)
 func (m *GraphModel) renderPreviewPanes(width, height int) string {
 	if len(m.nodes) == 0 || m.cursor >= len(m.nodes) {
-		return m.padLines([]string{m.styles.dim.Render("No selection")}, height)
+		return m.padLinesWithWidth([]string{m.styles.dim.Render("No selection")}, width, height)
 	}
 
 	node := m.nodes[m.cursor]
 
 	// Can't preview scopes or refs
 	if node.IsScope || node.IsRef || node.Node == nil {
-		return m.padLines([]string{m.styles.dim.Render("No preview available")}, height)
+		return m.padLinesWithWidth([]string{m.styles.dim.Render("No preview available")}, width, height)
 	}
 
 	// Calculate pane heights: reference context gets ~25% (min 5 lines), file content gets rest
@@ -656,7 +647,7 @@ func (m *GraphModel) renderRefContextPane(node *GraphNode, width, height int) st
 		lines = append(lines, m.styles.dim.Render("  This file is a root configuration entrypoint"))
 	}
 
-	return m.padLines(lines, height)
+	return m.padLinesWithWidth(lines, width, height)
 }
 
 // renderFileContentPane renders the actual file content
@@ -672,7 +663,7 @@ func (m *GraphModel) renderFileContentPane(node *GraphNode, width, height int) s
 	content := string(node.Node.Content)
 	if content == "" {
 		lines = append(lines, m.styles.dim.Render("  Empty file"))
-		return m.padLines(lines, height)
+		return m.padLinesWithWidth(lines, width, height)
 	}
 
 	fileLines := strings.Split(content, "\n")
@@ -701,7 +692,7 @@ func (m *GraphModel) renderFileContentPane(node *GraphNode, width, height int) s
 		lines = append(lines, m.styles.lineNum.Render(lineNum)+lineContent)
 	}
 
-	return m.padLines(lines, height)
+	return m.padLinesWithWidth(lines, width, height)
 }
 
 // padLines pads a slice of lines to fill the given height
@@ -710,6 +701,21 @@ func (m *GraphModel) padLines(lines []string, height int) string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// padLinesWithWidth pads a slice of lines to fill the given height and width
+func (m *GraphModel) padLinesWithWidth(lines []string, width, height int) string {
+	var result []string
+	for i := 0; i < height; i++ {
+		var line string
+		if i < len(lines) {
+			line = lines[i]
+		}
+		// Pad line to full width using lipgloss
+		paddedLine := lipgloss.NewStyle().Width(width).Render(line)
+		result = append(result, paddedLine)
+	}
+	return strings.Join(result, "\n")
 }
 
 func (m *GraphModel) renderTree() string {

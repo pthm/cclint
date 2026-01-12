@@ -19,6 +19,7 @@ type LLMRuleBase struct {
 func NewLLMRuleBase() *LLMRuleBase {
 	ctx := context.Background()
 	_, err := claudecode.Query(ctx, "echo test",
+		claudecode.WithModel("sonnet"),
 		claudecode.WithMaxTurns(1),
 	)
 	if err != nil {
@@ -54,12 +55,14 @@ func (b *LLMRuleBase) ExecuteQuery(ctx context.Context, prompt string, cwd strin
 
 	if cwd != "" {
 		iterator, err = claudecode.Query(ctx, prompt,
+			claudecode.WithModel("sonnet"),
 			claudecode.WithMaxTurns(3),
 			claudecode.WithAllowedTools("Read"),
 			claudecode.WithCwd(cwd),
 		)
 	} else {
 		iterator, err = claudecode.Query(ctx, prompt,
+			claudecode.WithModel("sonnet"),
 			claudecode.WithMaxTurns(3),
 			claudecode.WithAllowedTools("Read"),
 		)
