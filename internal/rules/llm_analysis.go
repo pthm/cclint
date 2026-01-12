@@ -3,11 +3,12 @@ package rules
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
+	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	claudecode "github.com/severity1/claude-agent-sdk-go"
 	"github.com/pthm-cable/cclint/internal/parser"
 )
 
@@ -21,21 +22,28 @@ type llmQualityMetrics struct {
 	OverallScore float64 `json:"overall_score"`
 }
 
-// LLMAnalysisRule uses Claude for deep configuration analysis
+// LLMAnalysisRule uses Claude Code for deep configuration analysis
 type LLMAnalysisRule struct {
-	client anthropic.Client
+	available bool
 }
 
 // NewLLMAnalysisRule creates a new LLM analysis rule.
-// Returns nil if ANTHROPIC_API_KEY is not set.
+// Returns nil if Claude Code CLI is not available.
 func NewLLMAnalysisRule() *LLMAnalysisRule {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return nil
+	// Test if Claude Code is available by attempting a simple query
+	ctx := context.Background()
+	_, err := claudecode.Query(ctx, "echo test",
+		claudecode.WithMaxTurns(1),
+	)
+	if err != nil {
+		// Check if it's a CLI not found error
+		if claudecode.IsCLINotFoundError(err) {
+			return nil
+		}
+		// Other errors might be temporary, allow the rule to be created
 	}
 
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
-	return &LLMAnalysisRule{client: client}
+	return &LLMAnalysisRule{available: true}
 }
 
 func (r *LLMAnalysisRule) Name() string {
@@ -43,7 +51,7 @@ func (r *LLMAnalysisRule) Name() string {
 }
 
 func (r *LLMAnalysisRule) Description() string {
-	return "Uses Claude AI for deep analysis of configuration quality"
+	return "Uses Claude Code for deep analysis of configuration quality"
 }
 
 func (r *LLMAnalysisRule) Config() RuleConfig {
@@ -57,8 +65,8 @@ func (r *LLMAnalysisRule) Config() RuleConfig {
 }
 
 func (r *LLMAnalysisRule) Run(ctx *AnalysisContext) ([]Issue, error) {
-	if r == nil {
-		return nil, fmt.Errorf("LLM rule not initialized (missing ANTHROPIC_API_KEY)")
+	if r == nil || !r.available {
+		return nil, fmt.Errorf("LLM rule not initialized (Claude Code CLI not available)")
 	}
 
 	var issues []Issue
@@ -71,7 +79,7 @@ func (r *LLMAnalysisRule) Run(ctx *AnalysisContext) ([]Issue, error) {
 			continue
 		}
 
-		nodeIssues, err := r.analyzeWithClaude(node.Path, string(node.Content))
+		nodeIssues, err := r.analyzeWithClaudeCode(context.Background(), node.Path)
 		if err != nil {
 			// Log error but continue with other files
 			continue
@@ -82,15 +90,26 @@ func (r *LLMAnalysisRule) Run(ctx *AnalysisContext) ([]Issue, error) {
 	return issues, nil
 }
 
-func (r *LLMAnalysisRule) analyzeWithClaude(path, content string) ([]Issue, error) {
-	prompt := fmt.Sprintf(`Analyze this AI agent configuration file for quality and potential issues.
+// llmAnalysisResponse is the expected JSON response from Claude Code
+type llmAnalysisResponse struct {
+	Issues []struct {
+		Severity   string `json:"severity"`
+		Message    string `json:"message"`
+		Line       int    `json:"line"`
+		Suggestion string `json:"suggestion"`
+	} `json:"issues"`
+	Metrics llmQualityMetrics `json:"metrics"`
+}
 
-File: %s
+func (r *LLMAnalysisRule) analyzeWithClaudeCode(ctx context.Context, path string) ([]Issue, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
 
-Content:
-%s
+	prompt := fmt.Sprintf(`Analyze the AI agent configuration file at %s for quality and potential issues.
 
-Provide a JSON response with the following structure:
+Read the file and provide a JSON response with this exact structure (no other text, just JSON):
 {
   "issues": [
     {
@@ -105,7 +124,8 @@ Provide a JSON response with the following structure:
     "specificity": 0.0-1.0,
     "consistency": 0.0-1.0,
     "completeness": 0.0-1.0,
-    "verbosity": "concise|moderate|verbose"
+    "verbosity": "concise|moderate|verbose",
+    "overall_score": 0.0-1.0
   }
 }
 
@@ -117,46 +137,55 @@ Focus on:
 5. Potentially dangerous permissions or instructions
 6. Best practices for AI agent configuration
 
-Return ONLY the JSON, no other text.`, path, truncateContent(content, 8000))
+Return ONLY valid JSON, no markdown code blocks, no explanatory text.`, absPath)
 
-	resp, err := r.client.Messages.New(context.Background(), anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaude3_5Haiku20241022,
-		MaxTokens: 2000,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
-	})
+	iterator, err := claudecode.Query(ctx, prompt,
+		claudecode.WithCwd(filepath.Dir(absPath)),
+		claudecode.WithMaxTurns(3), // Allow reading files
+		claudecode.WithAllowedTools("Read"), // Only allow reading
+	)
 	if err != nil {
-		return nil, fmt.Errorf("claude API error: %w", err)
+		return nil, fmt.Errorf("claude code error: %w", err)
 	}
+	defer iterator.Close()
 
-	// Extract text from response
-	var responseText string
-	for _, block := range resp.Content {
-		if block.Type == "text" {
-			responseText = block.Text
-			break
+	// Collect all text from the response
+	var responseBuilder strings.Builder
+	for {
+		message, err := iterator.Next(ctx)
+		if err != nil {
+			if errors.Is(err, claudecode.ErrNoMoreMessages) {
+				break
+			}
+			return nil, fmt.Errorf("error reading claude response: %w", err)
+		}
+
+		// Extract text from assistant messages
+		if assistantMsg, ok := message.(*claudecode.AssistantMessage); ok {
+			for _, block := range assistantMsg.Content {
+				if textBlock, ok := block.(*claudecode.TextBlock); ok {
+					responseBuilder.WriteString(textBlock.Text)
+				}
+			}
 		}
 	}
 
-	// Parse response
-	var result struct {
-		Issues []struct {
-			Severity   string `json:"severity"`
-			Message    string `json:"message"`
-			Line       int    `json:"line"`
-			Suggestion string `json:"suggestion"`
-		} `json:"issues"`
-		Metrics llmQualityMetrics `json:"metrics"`
+	responseText := responseBuilder.String()
+	if responseText == "" {
+		return nil, fmt.Errorf("empty response from claude code")
 	}
 
-	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse Claude response: %w", err)
+	// Try to extract JSON from the response
+	responseText = extractJSON(responseText)
+
+	var response llmAnalysisResponse
+	if err := json.Unmarshal([]byte(responseText), &response); err != nil {
+		return nil, fmt.Errorf("failed to parse Claude Code response: %w (response: %s)", err, truncateForError(responseText))
 	}
 
 	// Convert to rules.Issue
 	var issues []Issue
-	for _, issue := range result.Issues {
+	for _, issue := range response.Issues {
 		severity := Info
 		switch issue.Severity {
 		case "suggestion":
@@ -182,16 +211,16 @@ Return ONLY the JSON, no other text.`, path, truncateContent(content, 8000))
 	}
 
 	// Add overall metrics as info if quality is low
-	if result.Metrics.OverallScore > 0 && result.Metrics.OverallScore < 0.6 {
+	if response.Metrics.OverallScore > 0 && response.Metrics.OverallScore < 0.6 {
 		issues = append(issues, Issue{
 			Rule:     r.Name() + "/quality",
 			Severity: Suggestion,
 			Message: fmt.Sprintf(
 				"Overall quality score: %.0f%% (clarity: %.0f%%, specificity: %.0f%%, verbosity: %s)",
-				result.Metrics.OverallScore*100,
-				result.Metrics.Clarity*100,
-				result.Metrics.Specificity*100,
-				result.Metrics.Verbosity,
+				response.Metrics.OverallScore*100,
+				response.Metrics.Clarity*100,
+				response.Metrics.Specificity*100,
+				response.Metrics.Verbosity,
 			),
 			File: path,
 			Line: 1,
@@ -201,10 +230,49 @@ Return ONLY the JSON, no other text.`, path, truncateContent(content, 8000))
 	return issues, nil
 }
 
-// truncateContent truncates content to a maximum length
-func truncateContent(content string, maxLen int) string {
-	if len(content) <= maxLen {
-		return content
+// extractJSON attempts to extract JSON from a response that might be wrapped in markdown
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+
+	// If it starts with {, assume it's already JSON
+	if strings.HasPrefix(s, "{") {
+		return s
 	}
-	return content[:maxLen] + "\n...[truncated]..."
+
+	// Try to find JSON block in markdown
+	if idx := strings.Index(s, "```json"); idx != -1 {
+		start := idx + 7
+		if end := strings.Index(s[start:], "```"); end != -1 {
+			return strings.TrimSpace(s[start : start+end])
+		}
+	}
+
+	// Try to find raw JSON block
+	if idx := strings.Index(s, "```"); idx != -1 {
+		start := idx + 3
+		// Skip any language identifier
+		if nlIdx := strings.Index(s[start:], "\n"); nlIdx != -1 {
+			start += nlIdx + 1
+		}
+		if end := strings.Index(s[start:], "```"); end != -1 {
+			return strings.TrimSpace(s[start : start+end])
+		}
+	}
+
+	// Try to find { ... } pattern
+	if start := strings.Index(s, "{"); start != -1 {
+		if end := strings.LastIndex(s, "}"); end > start {
+			return s[start : end+1]
+		}
+	}
+
+	return s
+}
+
+// truncateForError truncates a string for inclusion in error messages
+func truncateForError(s string) string {
+	if len(s) > 200 {
+		return s[:200] + "..."
+	}
+	return s
 }
