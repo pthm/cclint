@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"os"
+
+	"github.com/pthm-cable/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -9,9 +12,12 @@ var (
 	verbose   bool
 	format    string
 	agentType string
+
+	// Global UI instance
+	globalUI *ui.UI
 )
 
-var rootCmd = &cobra.Command{
+var RootCmd = &cobra.Command{
 	Use:   "cclint",
 	Short: "A linter for Claude Code configurations",
 	Long: `cclint analyzes Claude Code configurations and related files
@@ -20,14 +26,19 @@ to identify issues, suggest improvements, and ensure best practices.
 It builds a reference tree of your agent configurations, analyzes
 documentation quality, and checks for common problems like broken
 references, circular dependencies, and unclear instructions.`,
-}
-
-func Execute() error {
-	return rootCmd.Execute()
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Initialize global UI with TTY detection
+		globalUI = ui.New(os.Stdout, os.Stderr, format)
+	},
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
-	rootCmd.PersistentFlags().StringVarP(&format, "format", "f", "terminal", "Output format (terminal, json)")
-	rootCmd.PersistentFlags().StringVarP(&agentType, "agent", "a", "claude-code", "Agent type to lint for")
+	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	RootCmd.PersistentFlags().StringVarP(&format, "format", "f", "terminal", "Output format (terminal, json)")
+	RootCmd.PersistentFlags().StringVarP(&agentType, "agent", "a", "claude-code", "Agent type to lint for")
+}
+
+// GetUI returns the global UI instance for use by subcommands
+func GetUI() *ui.UI {
+	return globalUI
 }

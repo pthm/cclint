@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/fatih/color"
 	"github.com/pthm-cable/cclint/internal/agent"
 	"github.com/pthm-cable/cclint/internal/analyzer"
+	"github.com/pthm-cable/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ Examples:
 }
 
 func init() {
-	rootCmd.AddCommand(reportCmd)
+	RootCmd.AddCommand(reportCmd)
 }
 
 func runReport(cmd *cobra.Command, args []string) error {
@@ -43,32 +43,50 @@ func runReport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
+	// Get the global UI
+	u := GetUI()
+
+	// Start spinner for tree building
+	spinner := u.StartSimpleSpinner(u.ErrWriter, "Building configuration tree...")
+
 	// Load agent configuration
 	agentConfig, err := agent.Load(agentType)
 	if err != nil {
+		if spinner != nil {
+			spinner.Stop()
+		}
 		return fmt.Errorf("failed to load agent config: %w", err)
 	}
 
 	// Build reference tree
 	tree, err := analyzer.BuildTree(absPath, agentConfig)
 	if err != nil {
+		if spinner != nil {
+			spinner.Stop()
+		}
 		return fmt.Errorf("failed to build reference tree: %w", err)
 	}
 
+	// Stop spinner
+	if spinner != nil {
+		spinner.Stop()
+	}
+
 	// Print report header
-	color.Cyan("Claude Code Configuration Report\n")
-	color.Cyan("================================\n\n")
+	fmt.Println(u.Styles.Suggestion.Render("Claude Code Configuration Report"))
+	fmt.Println(u.Styles.Suggestion.Render("================================"))
+	fmt.Println()
 
 	fmt.Printf("Agent: %s\n", agentConfig.Name)
 	fmt.Printf("Root:  %s\n\n", absPath)
 
 	// Print tree structure
-	color.Yellow("Configuration Tree:\n")
-	tree.PrintTree()
+	fmt.Println(u.Styles.Warning.Render("Configuration Tree:"))
+	printTree(tree, u)
 	fmt.Println()
 
 	// Print metrics
-	color.Yellow("Metrics:\n")
+	fmt.Println(u.Styles.Warning.Render("Metrics:"))
 	metrics := analyzer.ComputeMetrics(tree)
 	fmt.Printf("  Total files:      %d\n", metrics.TotalFiles)
 	fmt.Printf("  Total references: %d\n", metrics.TotalReferences)
@@ -77,10 +95,15 @@ func runReport(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Print reference summary
-	color.Yellow("References by Type:\n")
+	fmt.Println(u.Styles.Warning.Render("References by Type:"))
 	for refType, count := range metrics.ReferencesByType {
 		fmt.Printf("  %s: %d\n", refType, count)
 	}
 
 	return nil
+}
+
+// printTree prints the configuration tree with UI styling
+func printTree(tree *analyzer.Tree, u *ui.UI) {
+	tree.PrintTree()
 }

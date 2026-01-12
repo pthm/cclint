@@ -6,24 +6,25 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/fatih/color"
 	"github.com/pthm-cable/cclint/internal/rules"
+	"github.com/pthm-cable/cclint/internal/ui"
 )
 
 // TerminalReporter outputs results to the terminal with colors
 type TerminalReporter struct {
-	w io.Writer
+	w  io.Writer
+	ui *ui.UI
 }
 
 // NewTerminalReporter creates a new terminal reporter
-func NewTerminalReporter(w io.Writer) *TerminalReporter {
-	return &TerminalReporter{w: w}
+func NewTerminalReporter(w io.Writer, u *ui.UI) *TerminalReporter {
+	return &TerminalReporter{w: w, ui: u}
 }
 
 // Report outputs issues to the terminal
 func (r *TerminalReporter) Report(issues []rules.Issue) error {
 	if len(issues) == 0 {
-		color.New(color.FgGreen).Fprintln(r.w, "✓ No issues found")
+		fmt.Fprintln(r.w, r.ui.Styles.Success.Render(r.ui.Styles.IconSuccess+" No issues found"))
 		return nil
 	}
 
@@ -51,8 +52,8 @@ func (r *TerminalReporter) Report(issues []rules.Issue) error {
 
 		// Print file header
 		fmt.Fprintln(r.w)
-		color.New(color.FgWhite, color.Bold).Fprintf(r.w, "%s\n", filepath.Base(file))
-		color.New(color.FgHiBlack).Fprintf(r.w, "  %s\n", file)
+		fmt.Fprintln(r.w, r.ui.Styles.Header.Render(filepath.Base(file)))
+		fmt.Fprintln(r.w, r.ui.Styles.Path.Render("  "+file))
 
 		// Print each issue
 		for _, issue := range fileIssues {
@@ -74,22 +75,22 @@ func (r *TerminalReporter) Report(issues []rules.Issue) error {
 }
 
 func (r *TerminalReporter) printIssue(issue rules.Issue) {
-	var severityColor *color.Color
+	var style *ui.Styles
 	var icon string
+
+	style = r.ui.Styles
 
 	switch issue.Severity {
 	case rules.Error:
-		severityColor = color.New(color.FgRed)
-		icon = "✗"
+		icon = style.Error.Render(style.IconError)
 	case rules.Warning:
-		severityColor = color.New(color.FgYellow)
-		icon = "⚠"
+		icon = style.Warning.Render(style.IconWarning)
 	case rules.Suggestion:
-		severityColor = color.New(color.FgCyan)
-		icon = "💡"
+		icon = style.Suggestion.Render(style.IconSuggestion)
 	case rules.Info:
-		severityColor = color.New(color.FgBlue)
-		icon = "ℹ"
+		icon = style.Info.Render(style.IconInfo)
+	default:
+		icon = style.Info.Render(style.IconInfo)
 	}
 
 	// Line info
@@ -101,15 +102,15 @@ func (r *TerminalReporter) printIssue(issue rules.Issue) {
 		}
 	}
 
-	severityColor.Fprintf(r.w, "  %s ", icon)
+	fmt.Fprintf(r.w, "  %s ", icon)
 	fmt.Fprintf(r.w, "%s%s", filepath.Base(issue.File), lineInfo)
-	color.New(color.FgHiBlack).Fprintf(r.w, " [%s]", issue.Rule)
+	fmt.Fprintf(r.w, " %s", style.Rule.Render("["+issue.Rule+"]"))
 	fmt.Fprintln(r.w)
 	fmt.Fprintf(r.w, "    %s\n", issue.Message)
 
 	// Print context if available
 	if issue.Context != "" && len(issue.Context) < 200 {
-		color.New(color.FgHiBlack).Fprintf(r.w, "    > %s\n", issue.Context)
+		fmt.Fprintf(r.w, "    %s\n", style.Subheader.Render("> "+issue.Context))
 	}
 }
 
@@ -117,21 +118,21 @@ func (r *TerminalReporter) printSummary(issues []rules.Issue) {
 	summary := ComputeSummary(issues)
 
 	fmt.Fprintln(r.w)
-	fmt.Fprintln(r.w, "─────────────────────────────────────")
+	fmt.Fprintln(r.w, r.ui.Styles.Separator.Render("─────────────────────────────────────"))
 
 	parts := []string{}
 
 	if summary.Errors > 0 {
-		parts = append(parts, color.RedString("%d errors", summary.Errors))
+		parts = append(parts, r.ui.Styles.Error.Render(fmt.Sprintf("%d errors", summary.Errors)))
 	}
 	if summary.Warnings > 0 {
-		parts = append(parts, color.YellowString("%d warnings", summary.Warnings))
+		parts = append(parts, r.ui.Styles.Warning.Render(fmt.Sprintf("%d warnings", summary.Warnings)))
 	}
 	if summary.Suggestions > 0 {
-		parts = append(parts, color.CyanString("%d suggestions", summary.Suggestions))
+		parts = append(parts, r.ui.Styles.Suggestion.Render(fmt.Sprintf("%d suggestions", summary.Suggestions)))
 	}
 	if summary.Info > 0 {
-		parts = append(parts, color.BlueString("%d info", summary.Info))
+		parts = append(parts, r.ui.Styles.Info.Render(fmt.Sprintf("%d info", summary.Info)))
 	}
 
 	fmt.Fprintf(r.w, "Found %d issues in %d files: ", summary.TotalIssues, summary.Files)

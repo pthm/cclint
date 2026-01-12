@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fatih/color"
 	"github.com/pthm-cable/cclint/internal/agent"
 	"github.com/pthm-cable/cclint/internal/analyzer"
 	"github.com/pthm-cable/cclint/internal/reporter"
 	"github.com/pthm-cable/cclint/internal/rules"
+	"github.com/pthm-cable/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ Examples:
 func init() {
 	lintCmd.Flags().BoolVar(&deep, "deep", false, "Enable deep analysis using Claude API")
 	lintCmd.Flags().BoolVar(&offline, "offline", false, "Run in offline mode (heuristics only)")
-	rootCmd.AddCommand(lintCmd)
+	RootCmd.AddCommand(lintCmd)
 }
 
 func runLint(cmd *cobra.Command, args []string) error {
@@ -49,7 +49,22 @@ func runLint(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	// Load agent configuration
+	// Get the global UI
+	u := GetUI()
+
+	// Start progress tracking if in interactive mode
+	progress := u.StartProgress()
+	defer func() {
+		if progress != nil {
+			progress.Done(nil)
+		}
+	}()
+
+	// Stage 1: Load agent configuration
+	if progress != nil {
+		progress.SetStage(ui.StageLoadConfig)
+	}
+
 	agentConfig, err := agent.Load(agentType)
 	if err != nil {
 		return fmt.Errorf("failed to load agent config: %w", err)
@@ -60,7 +75,11 @@ func runLint(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Path: %s\n\n", absPath)
 	}
 
-	// Build reference tree
+	// Stage 2: Build reference tree
+	if progress != nil {
+		progress.SetStage(ui.StageBuildTree)
+	}
+
 	tree, err := analyzer.BuildTree(absPath, agentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to build reference tree: %w", err)
@@ -70,7 +89,11 @@ func runLint(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Found %d config files\n", tree.NodeCount())
 	}
 
-	// Run rules
+	// Stage 3: Run rules
+	if progress != nil {
+		progress.SetStage(ui.StageRunRules)
+	}
+
 	registry := rules.DefaultRegistry()
 	var allIssues []rules.Issue
 
@@ -82,22 +105,48 @@ func runLint(cmd *cobra.Command, args []string) error {
 
 	// Include AI rules only when --deep is set and not offline
 	includeAI := deep && !offline
-	for _, rule := range registry.Rules(includeAI) {
+	ruleList := registry.Rules(includeAI)
+
+	if progress != nil {
+		progress.SetRuleCount(len(ruleList))
+	}
+
+	for _, rule := range ruleList {
+		if progress != nil {
+			progress.RuleStart(rule.Name())
+		}
+
 		issues, err := rule.Run(ctx)
 		if err != nil {
-			color.Yellow("Warning: rule %s failed: %v\n", rule.Name(), err)
+			// Use styled warning output
+			fmt.Fprintln(os.Stderr, u.Styles.Warning.Render(
+				fmt.Sprintf("%s Warning: rule %s failed: %v", u.Styles.IconWarning, rule.Name(), err),
+			))
+			if progress != nil {
+				progress.RuleDone()
+			}
 			continue
 		}
 		allIssues = append(allIssues, issues...)
+
+		if progress != nil {
+			progress.RuleDone()
+		}
 	}
 
-	// Report results
+	// Stop progress before reporting
+	if progress != nil {
+		progress.Done(nil)
+		progress = nil // Prevent double-done in defer
+	}
+
+	// Stage 4: Report results
 	var rep reporter.Reporter
 	switch format {
 	case "json":
 		rep = reporter.NewJSONReporter(os.Stdout)
 	default:
-		rep = reporter.NewTerminalReporter(os.Stdout)
+		rep = reporter.NewTerminalReporter(os.Stdout, u)
 	}
 
 	return rep.Report(allIssues)

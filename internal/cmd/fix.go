@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/fatih/color"
 	"github.com/pthm-cable/cclint/internal/agent"
 	"github.com/pthm-cable/cclint/internal/analyzer"
 	"github.com/pthm-cable/cclint/internal/fixer"
 	"github.com/pthm-cable/cclint/internal/rules"
+	"github.com/pthm-cable/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +33,7 @@ Examples:
 func init() {
 	fixCmd.Flags().BoolVar(&aiAssisted, "ai", false, "Enable AI-assisted fixes using Claude API")
 	fixCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show fixes without applying them")
-	rootCmd.AddCommand(fixCmd)
+	RootCmd.AddCommand(fixCmd)
 }
 
 func runFix(cmd *cobra.Command, args []string) error {
@@ -47,19 +47,42 @@ func runFix(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	// Load agent configuration
+	// Get the global UI
+	u := GetUI()
+
+	// Start progress tracking
+	progress := u.StartProgress()
+	defer func() {
+		if progress != nil {
+			progress.Done(nil)
+		}
+	}()
+
+	// Stage 1: Load agent configuration
+	if progress != nil {
+		progress.SetStage(ui.StageLoadConfig)
+	}
+
 	agentConfig, err := agent.Load(agentType)
 	if err != nil {
 		return fmt.Errorf("failed to load agent config: %w", err)
 	}
 
-	// Build reference tree
+	// Stage 2: Build reference tree
+	if progress != nil {
+		progress.SetStage(ui.StageBuildTree)
+	}
+
 	tree, err := analyzer.BuildTree(absPath, agentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to build reference tree: %w", err)
 	}
 
-	// Run rules to find issues
+	// Stage 3: Run rules to find issues
+	if progress != nil {
+		progress.SetStage(ui.StageRunRules)
+	}
+
 	registry := rules.DefaultRegistry()
 	var allIssues []rules.Issue
 
@@ -69,12 +92,34 @@ func runFix(cmd *cobra.Command, args []string) error {
 		RootPath:    absPath,
 	}
 
-	for _, rule := range registry.Rules(false) {
+	ruleList := registry.Rules(false)
+	if progress != nil {
+		progress.SetRuleCount(len(ruleList))
+	}
+
+	for _, rule := range ruleList {
+		if progress != nil {
+			progress.RuleStart(rule.Name())
+		}
+
 		issues, err := rule.Run(ctx)
 		if err != nil {
+			if progress != nil {
+				progress.RuleDone()
+			}
 			continue // Skip rules that fail
 		}
 		allIssues = append(allIssues, issues...)
+
+		if progress != nil {
+			progress.RuleDone()
+		}
+	}
+
+	// Stop progress before output
+	if progress != nil {
+		progress.Done(nil)
+		progress = nil
 	}
 
 	// Filter to fixable issues
@@ -86,7 +131,7 @@ func runFix(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(fixableIssues) == 0 {
-		color.Green("No fixable issues found!")
+		fmt.Println(u.Styles.Success.Render(u.Styles.IconSuccess + " No fixable issues found!"))
 		return nil
 	}
 
@@ -96,12 +141,14 @@ func runFix(cmd *cobra.Command, args []string) error {
 	f := fixer.New(fixer.Options{
 		DryRun:     dryRun,
 		AIAssisted: aiAssisted,
-	})
+	}, u)
 
 	// Apply fixes
 	for _, issue := range fixableIssues {
 		if err := f.ApplyFix(issue); err != nil {
-			color.Red("Failed to fix %s: %v\n", issue.Rule, err)
+			fmt.Println(u.Styles.Error.Render(
+				fmt.Sprintf("%s Failed to fix %s: %v", u.Styles.IconError, issue.Rule, err),
+			))
 		}
 	}
 

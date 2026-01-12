@@ -1,13 +1,15 @@
 package main
 
 import (
+	"context"
 	"os"
 
+	"github.com/charmbracelet/fang"
 	"github.com/pthm-cable/cclint/internal/cmd"
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
+	if err := fang.Execute(context.Background(), cmd.RootCmd); err != nil {
 		os.Exit(1)
 	}
 }

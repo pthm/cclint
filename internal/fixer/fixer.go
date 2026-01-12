@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/pthm-cable/cclint/internal/rules"
+	"github.com/pthm-cable/cclint/internal/ui"
 )
 
 // Options configures the fixer behavior
@@ -18,11 +18,12 @@ type Options struct {
 // Fixer applies fixes to configuration files
 type Fixer struct {
 	opts Options
+	ui   *ui.UI
 }
 
 // New creates a new Fixer
-func New(opts Options) *Fixer {
-	return &Fixer{opts: opts}
+func New(opts Options, u *ui.UI) *Fixer {
+	return &Fixer{opts: opts, ui: u}
 }
 
 // ApplyFix applies a fix for an issue
@@ -45,14 +46,18 @@ func (f *Fixer) ApplyFix(issue rules.Issue) error {
 		}
 	}
 
-	color.Green("✓ Fixed: %s", issue.Rule)
+	fmt.Println(f.ui.Styles.Success.Render(
+		fmt.Sprintf("%s Fixed: %s", f.ui.Styles.IconSuccess, issue.Rule),
+	))
 	fmt.Printf("  %s\n", fix.Description)
 
 	return nil
 }
 
 func (f *Fixer) printDryRun(issue rules.Issue, fix *rules.Fix) {
-	color.Cyan("Would fix: %s", issue.Rule)
+	fmt.Println(f.ui.Styles.Suggestion.Render(
+		fmt.Sprintf("Would fix: %s", issue.Rule),
+	))
 	fmt.Printf("  File: %s\n", issue.File)
 	fmt.Printf("  Line: %d\n", issue.Line)
 	fmt.Printf("  Fix: %s\n", fix.Description)
@@ -67,7 +72,9 @@ func (f *Fixer) printDryRun(issue rules.Issue, fix *rules.Fix) {
 				if len(preview) > 100 {
 					preview = preview[:100] + "..."
 				}
-				color.Green("    + %s\n", strings.ReplaceAll(preview, "\n", "\n    + "))
+				fmt.Println(f.ui.Styles.Success.Render(
+					"    + " + strings.ReplaceAll(preview, "\n", "\n    + "),
+				))
 			}
 		}
 	}
