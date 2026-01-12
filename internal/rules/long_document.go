@@ -65,7 +65,7 @@ func (r *LongDocumentRule) Run(ctx *AnalysisContext) ([]Issue, error) {
 
 		if lines > maxLines {
 			issues = append(issues, Issue{
-				Rule:     r.Name(),
+				Rule:     r.Name() + "/lines",
 				Severity: Warning,
 				Message:  fmt.Sprintf("Document has %d lines, exceeds recommended maximum of %d", lines, maxLines),
 				File:     node.Path,
@@ -75,7 +75,7 @@ func (r *LongDocumentRule) Run(ctx *AnalysisContext) ([]Issue, error) {
 
 		if tokens > maxTokens {
 			issues = append(issues, Issue{
-				Rule:     r.Name(),
+				Rule:     r.Name() + "/tokens",
 				Severity: Warning,
 				Message:  fmt.Sprintf("Document has ~%d tokens, exceeds recommended maximum of %d", tokens, maxTokens),
 				File:     node.Path,

@@ -11,6 +11,7 @@ file_patterns:
   - ".claude/**/*.md"
   - ".claude/**/*.json"
   - ".claude/commands/**/*"
+  - ".claude/agents/**/*.md"
 
 reference_patterns:
   # @ file references (e.g., @src/file.ts)

@@ -61,7 +61,7 @@ func (r *BroadPermissionsRule) checkSettings(path string, data []byte) []Issue {
 			if toolStr, ok := tool.(string); ok {
 				if r.isDangerousPattern(toolStr) {
 					issues = append(issues, Issue{
-						Rule:     r.Name(),
+						Rule:     r.Name() + "/dangerous-pattern",
 						Severity: Warning,
 						Message:  fmt.Sprintf("Overly broad tool permission: %s", toolStr),
 						File:     path,
@@ -79,7 +79,7 @@ func (r *BroadPermissionsRule) checkSettings(path string, data []byte) []Issue {
 				if patternStr, ok := pattern.(string); ok {
 					if r.isDangerousBashPattern(patternStr) {
 						issues = append(issues, Issue{
-							Rule:     r.Name(),
+							Rule:     r.Name() + "/dangerous-bash-pattern",
 							Severity: Warning,
 							Message:  fmt.Sprintf("Overly broad bash permission: %s", patternStr),
 							File:     path,

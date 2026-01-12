@@ -61,9 +61,19 @@ func DefaultRegistry() *Registry {
 	r.Register(&MissingContextRule{})
 	r.Register(&VerbosityRule{})
 
-	// Register AI rules (requires API key)
-	if llmRule := NewLLMAnalysisRule(); llmRule != nil {
-		r.Register(llmRule)
+	// Register AI rules (requires --deep flag)
+	// These rules analyze configurations per-scope (main agent and each subagent separately)
+	if rule := NewLLMDuplicatesRule(); rule != nil {
+		r.Register(rule)
+	}
+	if rule := NewLLMContradictionsRule(); rule != nil {
+		r.Register(rule)
+	}
+	if rule := NewLLMClarityRule(); rule != nil {
+		r.Register(rule)
+	}
+	if rule := NewLLMActionabilityRule(); rule != nil {
+		r.Register(rule)
 	}
 
 	return r

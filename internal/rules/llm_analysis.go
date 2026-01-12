@@ -1,3 +1,13 @@
+// Deprecated: This file contains the original monolithic LLM analysis rule.
+// It has been replaced by focused per-scope rules:
+// - llm_duplicates.go
+// - llm_contradictions.go
+// - llm_clarity.go
+// - llm_actionability.go
+//
+// This file is kept for reference but is no longer registered in the default registry.
+// It will be removed in a future version.
+
 package rules
 
 import (

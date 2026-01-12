@@ -66,7 +66,7 @@ func (r *BrokenRefsRule) checkFileRef(ref analyzer.Reference, rootPath string) *
 		rootRelative := filepath.Join(rootPath, refPath)
 		if _, err := os.Stat(rootRelative); err != nil {
 			return &Issue{
-				Rule:     r.Name(),
+				Rule:     r.Name() + "/file-not-found",
 				Severity: Error,
 				Message:  fmt.Sprintf("Referenced file not found: %s", ref.Value),
 				File:     ref.Source.File,
@@ -88,7 +88,7 @@ func (r *BrokenRefsRule) checkURLRef(ref analyzer.Reference) *Issue {
 	_, err := url.ParseRequestURI(ref.Value)
 	if err != nil {
 		return &Issue{
-			Rule:     r.Name(),
+			Rule:     r.Name() + "/invalid-url-format",
 			Severity: Error,
 			Message:  fmt.Sprintf("Invalid URL format: %s", ref.Value),
 			File:     ref.Source.File,
