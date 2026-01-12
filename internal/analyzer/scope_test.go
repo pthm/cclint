@@ -15,6 +15,8 @@ func TestScopeTypeString(t *testing.T) {
 	}{
 		{ScopeTypeMain, "main"},
 		{ScopeTypeSubagent, "subagent"},
+		{ScopeTypeCommand, "command"},
+		{ScopeTypeSkill, "skill"},
 		{ScopeType(99), "unknown"},
 	}
 
@@ -418,5 +420,270 @@ func TestAllPaths(t *testing.T) {
 		if !pathSet[expected] {
 			t.Errorf("Expected path %s in AllPaths()", expected)
 		}
+	}
+}
+
+func TestDiscoverCommands(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "commands-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create directory structure with commands
+	dirs := []string{
+		".claude",
+		".claude/commands",
+		".claude/commands/git",
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0o755); err != nil {
+			t.Fatalf("Failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	files := map[string]string{
+		"CLAUDE.md": `# Main Agent
+Simple configuration.`,
+		".claude/commands/deploy.md": `# Deploy Command
+Deploys the application.`,
+		".claude/commands/git/push.md": `# Git Push Command
+Pushes changes to remote.`,
+	}
+
+	for name, content := range files {
+		path := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", name, err)
+		}
+	}
+
+	agentConfig, err := agent.Load("claude-code")
+	if err != nil {
+		t.Fatalf("Failed to load agent config: %v", err)
+	}
+
+	tree, err := BuildTree(tmpDir, agentConfig)
+	if err != nil {
+		t.Fatalf("Failed to build tree: %v", err)
+	}
+
+	// Discover scopes (commands are nested under main scope)
+	scopes, err := tree.DiscoverScopes(agentConfig, tmpDir)
+	if err != nil {
+		t.Fatalf("DiscoverScopes failed: %v", err)
+	}
+
+	// Find main scope
+	var mainScope *ContextScope
+	for _, scope := range scopes {
+		if scope.Type == ScopeTypeMain {
+			mainScope = scope
+			break
+		}
+	}
+
+	if mainScope == nil {
+		t.Fatal("Expected main scope")
+	}
+
+	// Find command scopes in main scope's children
+	commandNames := make(map[string]bool)
+	for _, child := range mainScope.Children {
+		if child.Type == ScopeTypeCommand {
+			commandNames[child.Name] = true
+		}
+	}
+
+	// Should have both commands
+	if !commandNames["deploy"] {
+		t.Error("Expected 'deploy' command scope in main.Children")
+	}
+	if !commandNames["git/push"] {
+		t.Error("Expected 'git/push' command scope in main.Children")
+	}
+
+	// Check that command scopes have correct entrypoints
+	for _, child := range mainScope.Children {
+		if child.Type == ScopeTypeCommand {
+			if child.Name == "deploy" && !filepath.IsAbs(child.Entrypoint) {
+				t.Errorf("Expected absolute entrypoint for deploy, got %s", child.Entrypoint)
+			}
+			if child.Name == "git/push" && !filepath.IsAbs(child.Entrypoint) {
+				t.Errorf("Expected absolute entrypoint for git/push, got %s", child.Entrypoint)
+			}
+		}
+	}
+}
+
+func TestDiscoverCommandsEmpty(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "commands-empty-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create structure without commands directory
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".claude"), 0o755); err != nil {
+		t.Fatalf("Failed to create .claude dir: %v", err)
+	}
+
+	files := map[string]string{
+		"CLAUDE.md": `# Main Agent
+Simple configuration.`,
+	}
+
+	for name, content := range files {
+		path := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", name, err)
+		}
+	}
+
+	agentConfig, err := agent.Load("claude-code")
+	if err != nil {
+		t.Fatalf("Failed to load agent config: %v", err)
+	}
+
+	tree, err := BuildTree(tmpDir, agentConfig)
+	if err != nil {
+		t.Fatalf("Failed to build tree: %v", err)
+	}
+
+	// Discover scopes
+	scopes, err := tree.DiscoverScopes(agentConfig, tmpDir)
+	if err != nil {
+		t.Fatalf("DiscoverScopes failed: %v", err)
+	}
+
+	// Find main scope and verify no command children
+	var mainScope *ContextScope
+	for _, scope := range scopes {
+		if scope.Type == ScopeTypeMain {
+			mainScope = scope
+			break
+		}
+	}
+
+	if mainScope != nil {
+		for _, child := range mainScope.Children {
+			if child.Type == ScopeTypeCommand {
+				t.Errorf("Expected no command scopes, got %s", child.Name)
+			}
+		}
+	}
+}
+
+func TestDiscoverSkills(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "skills-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create directory structure with skills
+	dirs := []string{
+		".claude",
+		".claude/skills",
+		".claude/skills/ck-search",
+		".claude/agents",
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0o755); err != nil {
+			t.Fatalf("Failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	files := map[string]string{
+		"CLAUDE.md": `# Main Agent
+Simple configuration.`,
+		".claude/skills/ck-search/SKILL.md": `---
+name: ck-search
+description: Semantic code search
+---
+# CK Search Skill
+Use this skill to search code semantically.`,
+		".claude/skills/linear.md": `---
+name: linear
+description: Linear integration
+---
+# Linear Skill`,
+		".claude/agents/reviewer.md": `---
+name: reviewer
+skills: ck-search, linear
+---
+# Reviewer Agent`,
+	}
+
+	for name, content := range files {
+		path := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", name, err)
+		}
+	}
+
+	agentConfig, err := agent.Load("claude-code")
+	if err != nil {
+		t.Fatalf("Failed to load agent config: %v", err)
+	}
+
+	tree, err := BuildTree(tmpDir, agentConfig)
+	if err != nil {
+		t.Fatalf("Failed to build tree: %v", err)
+	}
+
+	scopes, err := tree.DiscoverScopes(agentConfig, tmpDir)
+	if err != nil {
+		t.Fatalf("DiscoverScopes failed: %v", err)
+	}
+
+	// Find main scope
+	var mainScope *ContextScope
+	var reviewerScope *ContextScope
+	for _, scope := range scopes {
+		if scope.Type == ScopeTypeMain {
+			mainScope = scope
+		}
+		if scope.Type == ScopeTypeSubagent && scope.Name == "reviewer" {
+			reviewerScope = scope
+		}
+	}
+
+	if mainScope == nil {
+		t.Fatal("Expected main scope")
+	}
+
+	// Check skills are in main scope's children
+	skillNames := make(map[string]bool)
+	for _, child := range mainScope.Children {
+		if child.Type == ScopeTypeSkill {
+			skillNames[child.Name] = true
+		}
+	}
+
+	if !skillNames["ck-search"] {
+		t.Error("Expected 'ck-search' skill in main.Children")
+	}
+	if !skillNames["linear"] {
+		t.Error("Expected 'linear' skill in main.Children")
+	}
+
+	// Check reviewer subagent has its declared skills
+	if reviewerScope == nil {
+		t.Fatal("Expected reviewer subagent scope")
+	}
+
+	reviewerSkills := make(map[string]bool)
+	for _, child := range reviewerScope.Children {
+		if child.Type == ScopeTypeSkill {
+			reviewerSkills[child.Name] = true
+		}
+	}
+
+	if !reviewerSkills["ck-search"] {
+		t.Error("Expected 'ck-search' skill in reviewer.Children")
+	}
+	if !reviewerSkills["linear"] {
+		t.Error("Expected 'linear' skill in reviewer.Children")
 	}
 }

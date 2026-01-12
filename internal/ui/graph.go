@@ -78,6 +78,8 @@ type graphStyles struct {
 	scope         lipgloss.Style
 	scopeMain     lipgloss.Style
 	scopeSub      lipgloss.Style
+	scopeCommand  lipgloss.Style
+	scopeSkill    lipgloss.Style
 	refFile       lipgloss.Style
 	refURL        lipgloss.Style
 	refTool       lipgloss.Style
@@ -157,6 +159,8 @@ func defaultGraphStyles() graphStyles {
 		scope:         lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
 		scopeMain:     lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true),
 		scopeSub:      lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true),
+		scopeCommand:  lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true),
+		scopeSkill:    lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
 		refFile:       lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
 		refURL:        lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
 		refTool:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
@@ -207,6 +211,24 @@ func (m *GraphModel) buildNodes() {
 				Depth:    0,
 			}
 			m.allNodes = append(m.allNodes, scopeNode)
+
+			// Add nested scopes (commands/skills) as children
+			for _, childScope := range scope.Children {
+				childScopeNode := &GraphNode{
+					Scope:    childScope,
+					IsScope:  true,
+					Expanded: false, // Collapsed by default
+					Depth:    1,
+					Parent:   scopeNode,
+				}
+				scopeNode.Children = append(scopeNode.Children, childScopeNode)
+
+				// Add files in the nested scope
+				for _, configNode := range childScope.Nodes {
+					fileNode := m.buildFileNode(configNode, childScopeNode, 2)
+					childScopeNode.Children = append(childScopeNode.Children, fileNode)
+				}
+			}
 
 			// Add files in this scope
 			for _, configNode := range scope.Nodes {
@@ -771,9 +793,16 @@ func (m *GraphModel) renderNode(node *GraphNode, selected bool) string {
 	if node.IsScope {
 		icon := "📦 "
 		style := m.styles.scopeMain
-		if node.Scope.Type == analyzer.ScopeTypeSubagent {
+		switch node.Scope.Type {
+		case analyzer.ScopeTypeSubagent:
 			icon = "🤖 "
 			style = m.styles.scopeSub
+		case analyzer.ScopeTypeCommand:
+			icon = "⚡ "
+			style = m.styles.scopeCommand
+		case analyzer.ScopeTypeSkill:
+			icon = "🔧 "
+			style = m.styles.scopeSkill
 		}
 		content = icon + style.Render(fmt.Sprintf("[%s] %s", node.Scope.Type.String(), node.Scope.Name))
 		if node.Scope.Entrypoint != "" {

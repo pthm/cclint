@@ -4,15 +4,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ParsedFile represents a parsed configuration file
 type ParsedFile struct {
-	Path     string
-	Content  []byte
-	FileType FileType
-	Category FileCategory
-	Sections []Section
+	Path        string
+	Content     []byte
+	FileType    FileType
+	Category    FileCategory
+	Sections    []Section
+	Frontmatter map[string]interface{} // YAML frontmatter from markdown files
 }
 
 // FileType represents the type of configuration file
@@ -164,4 +167,38 @@ func GetFileCategory(path string) FileCategory {
 	}
 
 	return FileCategoryUnknown
+}
+
+// ParseFrontmatter extracts YAML frontmatter from content between --- delimiters
+// Returns the parsed frontmatter and the remaining content without frontmatter
+func ParseFrontmatter(content []byte) (map[string]interface{}, []byte) {
+	s := string(content)
+
+	// Must start with ---
+	if !strings.HasPrefix(s, "---") {
+		return nil, content
+	}
+
+	// Find the closing ---
+	rest := s[3:]
+	endIdx := strings.Index(rest, "\n---")
+	if endIdx == -1 {
+		return nil, content
+	}
+
+	// Extract frontmatter YAML
+	frontmatterStr := strings.TrimSpace(rest[:endIdx])
+
+	var frontmatter map[string]interface{}
+	if err := yaml.Unmarshal([]byte(frontmatterStr), &frontmatter); err != nil {
+		return nil, content
+	}
+
+	// Return remaining content after frontmatter
+	remaining := rest[endIdx+4:] // +4 for "\n---"
+	if strings.HasPrefix(remaining, "\n") {
+		remaining = remaining[1:]
+	}
+
+	return frontmatter, []byte(remaining)
 }

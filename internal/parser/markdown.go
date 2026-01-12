@@ -19,17 +19,21 @@ func (p *MarkdownParser) CanParse(path string) bool {
 
 // Parse parses a markdown file into sections
 func (p *MarkdownParser) Parse(path string, content []byte) (*ParsedFile, error) {
+	// Extract frontmatter if present
+	frontmatter, contentWithoutFrontmatter := ParseFrontmatter(content)
+
 	md := goldmark.New()
-	reader := text.NewReader(content)
+	reader := text.NewReader(contentWithoutFrontmatter)
 	doc := md.Parser().Parse(reader)
 
-	sections := p.extractSections(doc, content)
+	sections := p.extractSections(doc, contentWithoutFrontmatter)
 
 	return &ParsedFile{
-		Path:     path,
-		Content:  content,
-		FileType: FileTypeMarkdown,
-		Sections: sections,
+		Path:        path,
+		Content:     content, // Keep original content
+		FileType:    FileTypeMarkdown,
+		Sections:    sections,
+		Frontmatter: frontmatter,
 	}, nil
 }
 

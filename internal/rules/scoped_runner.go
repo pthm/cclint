@@ -79,8 +79,16 @@ func BuildFileList(paths []string) string {
 
 // ScopeContextDescription returns a human-readable description of the scope
 func ScopeContextDescription(scope *analyzer.ContextScope) string {
-	if scope.Type == analyzer.ScopeTypeMain {
+	switch scope.Type {
+	case analyzer.ScopeTypeMain:
 		return "main agent"
+	case analyzer.ScopeTypeSubagent:
+		return "subagent: " + scope.Name
+	case analyzer.ScopeTypeCommand:
+		return "command: /" + scope.Name
+	case analyzer.ScopeTypeSkill:
+		return "skill: /" + scope.Name
+	default:
+		return scope.Name
 	}
-	return "subagent: " + scope.Name
 }
