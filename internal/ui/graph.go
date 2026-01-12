@@ -12,6 +12,15 @@ import (
 	"github.com/pthm/cclint/internal/analyzer"
 )
 
+// RefSource stores metadata about where a file was referenced from
+type RefSource struct {
+	Line         int    // Line number in parent file
+	Column       int    // Column number
+	OriginalText string // The markdown text that created this reference
+	Context      string // Surrounding lines
+	Priority     int    // Priority based on markers
+}
+
 // GraphNode represents a displayable node in the graph
 type GraphNode struct {
 	Node       *analyzer.ConfigNode
@@ -25,57 +34,67 @@ type GraphNode struct {
 	IsRef      bool             // True if this is a reference (not a file)
 	RefValue   string           // The reference value
 	RefContext string           // Context around the reference
+	SourceRefs []RefSource      // Reference sources (merged from parent refs)
 }
 
 // GraphModel is the bubbletea model for graph visualization
 type GraphModel struct {
-	tree       *analyzer.Tree
-	scopes     []*analyzer.ContextScope
-	rootPath   string
-	nodes      []*GraphNode    // Flattened list of visible nodes
-	allNodes   []*GraphNode    // All nodes including collapsed ones
-	cursor     int             // Currently selected node
-	viewport   viewport.Model
-	ready      bool
-	width      int
-	height     int
-	showRefs   bool            // Toggle to show/hide references
-	showScopes bool            // Toggle to show scope grouping
-	keys       graphKeyMap
-	styles     graphStyles
+	tree          *analyzer.Tree
+	scopes        []*analyzer.ContextScope
+	rootPath      string
+	nodes         []*GraphNode // Flattened list of visible nodes
+	allNodes      []*GraphNode // All nodes including collapsed ones
+	cursor        int          // Currently selected node
+	viewport      viewport.Model
+	ready         bool
+	width         int
+	height        int
+	showRefs      bool // Toggle to show/hide references
+	showScopes    bool // Toggle to show scope grouping
+	showPreview   bool // Toggle preview pane
+	previewScroll int  // Scroll offset in preview
+	keys          graphKeyMap
+	styles        graphStyles
 }
 
 type graphKeyMap struct {
-	Up       key.Binding
-	Down     key.Binding
-	Left     key.Binding
-	Right    key.Binding
-	Toggle   key.Binding
-	ToggleRefs key.Binding
+	Up           key.Binding
+	Down         key.Binding
+	Left         key.Binding
+	Right        key.Binding
+	Toggle       key.Binding
+	ToggleRefs   key.Binding
 	ToggleScopes key.Binding
-	Quit     key.Binding
-	Help     key.Binding
+	TogglePreview key.Binding
+	PreviewUp    key.Binding
+	PreviewDown  key.Binding
+	Quit         key.Binding
+	Help         key.Binding
 }
 
 type graphStyles struct {
-	selected    lipgloss.Style
-	file        lipgloss.Style
-	scope       lipgloss.Style
-	scopeMain   lipgloss.Style
-	scopeSub    lipgloss.Style
-	refFile     lipgloss.Style
-	refURL      lipgloss.Style
-	refTool     lipgloss.Style
-	refSubagent lipgloss.Style
-	refSkill    lipgloss.Style
-	refMCP      lipgloss.Style
-	tree        lipgloss.Style
-	dim         lipgloss.Style
-	detail      lipgloss.Style
-	header      lipgloss.Style
-	help        lipgloss.Style
-	statusBar   lipgloss.Style
-	helpBar     lipgloss.Style
+	selected      lipgloss.Style
+	file          lipgloss.Style
+	scope         lipgloss.Style
+	scopeMain     lipgloss.Style
+	scopeSub      lipgloss.Style
+	refFile       lipgloss.Style
+	refURL        lipgloss.Style
+	refTool       lipgloss.Style
+	refSubagent   lipgloss.Style
+	refSkill      lipgloss.Style
+	refMCP        lipgloss.Style
+	tree          lipgloss.Style
+	dim           lipgloss.Style
+	detail        lipgloss.Style
+	header        lipgloss.Style
+	help          lipgloss.Style
+	statusBar     lipgloss.Style
+	helpBar       lipgloss.Style
+	lineNum       lipgloss.Style
+	highlightLine lipgloss.Style
+	separator     lipgloss.Style
+	previewHeader lipgloss.Style
 }
 
 func defaultGraphKeyMap() graphKeyMap {
@@ -108,6 +127,18 @@ func defaultGraphKeyMap() graphKeyMap {
 			key.WithKeys("s"),
 			key.WithHelp("s", "toggle scopes"),
 		),
+		TogglePreview: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "preview"),
+		),
+		PreviewUp: key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("ctrl+u", "preview up"),
+		),
+		PreviewDown: key.NewBinding(
+			key.WithKeys("ctrl+d"),
+			key.WithHelp("ctrl+d", "preview down"),
+		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
@@ -121,24 +152,28 @@ func defaultGraphKeyMap() graphKeyMap {
 
 func defaultGraphStyles() graphStyles {
 	return graphStyles{
-		selected:    lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true),
-		file:        lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
-		scope:       lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
-		scopeMain:   lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true),
-		scopeSub:    lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true),
-		refFile:     lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
-		refURL:      lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
-		refTool:     lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
-		refSubagent: lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
-		refSkill:    lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
-		refMCP:      lipgloss.NewStyle().Foreground(lipgloss.Color("208")),
-		tree:        lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		dim:         lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
-		detail:      lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
-		header:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("236")).Padding(0, 1),
-		help:        lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
-		statusBar:   lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236")).Padding(0, 1),
-		helpBar:     lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Background(lipgloss.Color("235")).Padding(0, 0),
+		selected:      lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true),
+		file:          lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		scope:         lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
+		scopeMain:     lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true),
+		scopeSub:      lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true),
+		refFile:       lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+		refURL:        lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+		refTool:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
+		refSubagent:   lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
+		refSkill:      lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
+		refMCP:        lipgloss.NewStyle().Foreground(lipgloss.Color("208")),
+		tree:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		dim:           lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
+		detail:        lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		header:        lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("236")).Padding(0, 1),
+		help:          lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+		statusBar:     lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236")).Padding(0, 1),
+		helpBar:       lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Background(lipgloss.Color("235")).Padding(0, 0),
+		lineNum:       lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		highlightLine: lipgloss.NewStyle().Background(lipgloss.Color("58")).Foreground(lipgloss.Color("230")),
+		separator:     lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
+		previewHeader: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")).Background(lipgloss.Color("236")).Padding(0, 1),
 	}
 }
 
@@ -200,9 +235,21 @@ func (m *GraphModel) buildFileNode(configNode *analyzer.ConfigNode, parent *Grap
 		Parent:   parent,
 	}
 
-	// Add references as children if enabled
+	// Build map of resolved paths -> references (for file refs that resolved)
+	refsByTarget := make(map[string][]analyzer.Reference)
+	for _, ref := range configNode.References {
+		if ref.Type == analyzer.RefTypeFile && ref.Resolved {
+			refsByTarget[ref.Target] = append(refsByTarget[ref.Target], ref)
+		}
+	}
+
+	// Add non-file references as children (URLs, tools, etc.) or unresolved file refs
 	if m.showRefs {
 		for _, ref := range configNode.References {
+			// Skip resolved file refs - they'll be merged with the child node
+			if ref.Type == analyzer.RefTypeFile && ref.Resolved {
+				continue
+			}
 			refNode := &GraphNode{
 				IsRef:      true,
 				RefType:    ref.Type,
@@ -215,9 +262,23 @@ func (m *GraphModel) buildFileNode(configNode *analyzer.ConfigNode, parent *Grap
 		}
 	}
 
-	// Add child files
+	// Add child files with merged reference metadata
 	for _, childConfig := range configNode.Children {
 		childNode := m.buildFileNode(childConfig, node, depth+1)
+
+		// Attach reference sources from parent's refs that pointed to this child
+		if refs, ok := refsByTarget[childConfig.Path]; ok {
+			for _, ref := range refs {
+				childNode.SourceRefs = append(childNode.SourceRefs, RefSource{
+					Line:         ref.Source.Line,
+					Column:       ref.Source.Column,
+					OriginalText: ref.Value,
+					Context:      ref.Context,
+					Priority:     ref.Priority,
+				})
+			}
+		}
+
 		node.Children = append(node.Children, childNode)
 	}
 
@@ -295,6 +356,23 @@ func (m GraphModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ToggleScopes):
 			m.showScopes = !m.showScopes
 			m.buildNodes()
+
+		case key.Matches(msg, m.keys.TogglePreview):
+			m.showPreview = !m.showPreview
+			m.previewScroll = 0 // Reset scroll when toggling
+
+		case key.Matches(msg, m.keys.PreviewUp):
+			if m.showPreview && m.previewScroll > 0 {
+				m.previewScroll -= 10
+				if m.previewScroll < 0 {
+					m.previewScroll = 0
+				}
+			}
+
+		case key.Matches(msg, m.keys.PreviewDown):
+			if m.showPreview {
+				m.previewScroll += 10
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -321,42 +399,36 @@ func (m GraphModel) View() string {
 
 	// Reserve space for footer (detail + help + padding)
 	footerHeight := 4
-	treeHeight := m.height - footerHeight
-	if treeHeight < 5 {
-		treeHeight = 5
+	contentHeight := m.height - footerHeight
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+
+	var mainContent string
+
+	if m.showPreview {
+		// Split view: 50% tree, 50% preview
+		treeWidth := m.width * 50 / 100
+		previewWidth := m.width - treeWidth - 1 // -1 for separator
+
+		treeView := m.renderTreePane(treeWidth, contentHeight)
+		previewView := m.renderPreviewPanes(previewWidth, contentHeight)
+
+		// Build separator column
+		var sepLines []string
+		for i := 0; i < contentHeight; i++ {
+			sepLines = append(sepLines, m.styles.separator.Render("│"))
+		}
+		separator := strings.Join(sepLines, "\n")
+
+		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, treeView, separator, previewView)
+	} else {
+		// Single pane view
+		mainContent = m.renderTreePane(m.width, contentHeight)
 	}
 
 	var sb strings.Builder
-
-	// Tree view
-	treeContent := m.renderTree()
-	lines := strings.Split(strings.TrimSuffix(treeContent, "\n"), "\n")
-
-	// Scroll to keep cursor visible
-	startIdx := 0
-	if m.cursor >= treeHeight {
-		startIdx = m.cursor - treeHeight + 1
-	}
-
-	endIdx := startIdx + treeHeight
-	if endIdx > len(lines) {
-		endIdx = len(lines)
-	}
-
-	// Render visible tree lines
-	if startIdx < len(lines) {
-		visibleLines := lines[startIdx:endIdx]
-		sb.WriteString(strings.Join(visibleLines, "\n"))
-	}
-
-	// Pad tree area to maintain consistent height
-	renderedLines := 0
-	if endIdx > startIdx {
-		renderedLines = endIdx - startIdx
-	}
-	for i := renderedLines; i < treeHeight; i++ {
-		sb.WriteString("\n")
-	}
+	sb.WriteString(mainContent)
 
 	// Footer section
 	sb.WriteString("\n")
@@ -371,13 +443,273 @@ func (m GraphModel) View() string {
 	sb.WriteString("\n")
 
 	// Help bar
-	help := fmt.Sprintf(" ↑↓ navigate  ←→ collapse/expand  r refs(%s)  s scopes(%s)  q quit",
+	help := fmt.Sprintf(" ↑↓ navigate  ←→ collapse/expand  p preview(%s)  r refs(%s)  s scopes(%s)  q quit",
+		boolToOnOff(m.showPreview),
 		boolToOnOff(m.showRefs),
 		boolToOnOff(m.showScopes),
 	)
 	sb.WriteString(m.styles.helpBar.Width(m.width).Render(help))
 
 	return sb.String()
+}
+
+// renderTreePane renders the tree with a specific width constraint
+func (m *GraphModel) renderTreePane(width, height int) string {
+	treeContent := m.renderTree()
+	lines := strings.Split(strings.TrimSuffix(treeContent, "\n"), "\n")
+
+	// Scroll to keep cursor visible
+	startIdx := 0
+	if m.cursor >= height {
+		startIdx = m.cursor - height + 1
+	}
+
+	endIdx := startIdx + height
+	if endIdx > len(lines) {
+		endIdx = len(lines)
+	}
+
+	// Truncate lines to width
+	var visibleLines []string
+	for i := startIdx; i < endIdx; i++ {
+		line := lines[i]
+		// Truncate if needed (accounting for ANSI codes is tricky, so just limit raw length)
+		if len(line) > width {
+			line = line[:width-1] + "…"
+		}
+		visibleLines = append(visibleLines, line)
+	}
+
+	// Pad to fill height
+	for i := len(visibleLines); i < height; i++ {
+		visibleLines = append(visibleLines, "")
+	}
+
+	return strings.Join(visibleLines, "\n")
+}
+
+// renderPreview renders the file preview pane
+func (m *GraphModel) renderPreview(width, height int) string {
+	if len(m.nodes) == 0 || m.cursor >= len(m.nodes) {
+		return m.padLines([]string{m.styles.dim.Render("No selection")}, height)
+	}
+
+	node := m.nodes[m.cursor]
+
+	// Can't preview scopes or refs
+	if node.IsScope || node.IsRef || node.Node == nil {
+		return m.padLines([]string{m.styles.dim.Render("No preview available")}, height)
+	}
+
+	// Get file content
+	content := string(node.Node.Content)
+	if content == "" {
+		return m.padLines([]string{m.styles.dim.Render("Empty file")}, height)
+	}
+
+	lines := strings.Split(content, "\n")
+
+	// Determine highlight line (from SourceRefs if available)
+	highlightLine := -1
+	if len(node.SourceRefs) > 0 {
+		highlightLine = node.SourceRefs[0].Line - 1 // 0-indexed
+	}
+
+	// Calculate start line: auto-scroll to center highlighted line, or use manual scroll
+	startLine := m.previewScroll
+	if highlightLine >= 0 && m.previewScroll == 0 {
+		// Auto-scroll to center the highlighted line
+		startLine = highlightLine - height/2
+		if startLine < 0 {
+			startLine = 0
+		}
+	}
+
+	// Clamp scroll
+	maxScroll := len(lines) - height
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if startLine > maxScroll {
+		startLine = maxScroll
+	}
+
+	// Render preview lines with line numbers
+	var previewLines []string
+
+	// Header showing filename
+	relPath, _ := filepath.Rel(m.rootPath, node.Node.Path)
+	header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" %s ", relPath))
+	previewLines = append(previewLines, header)
+
+	// File content
+	for i := startLine; i < startLine+height-1 && i < len(lines); i++ {
+		lineNum := fmt.Sprintf("%4d ", i+1)
+		lineContent := lines[i]
+
+		// Truncate line if needed
+		maxContentWidth := width - 6 // Account for line number
+		if len(lineContent) > maxContentWidth {
+			lineContent = lineContent[:maxContentWidth-1] + "…"
+		}
+
+		var renderedLine string
+		if i == highlightLine {
+			// Highlight this line
+			renderedLine = m.styles.highlightLine.Render(lineNum + lineContent)
+		} else {
+			renderedLine = m.styles.lineNum.Render(lineNum) + lineContent
+		}
+
+		previewLines = append(previewLines, renderedLine)
+	}
+
+	return m.padLines(previewLines, height)
+}
+
+// renderPreviewPanes renders a two-pane preview: reference context (top) and file content (bottom)
+func (m *GraphModel) renderPreviewPanes(width, height int) string {
+	if len(m.nodes) == 0 || m.cursor >= len(m.nodes) {
+		return m.padLines([]string{m.styles.dim.Render("No selection")}, height)
+	}
+
+	node := m.nodes[m.cursor]
+
+	// Can't preview scopes or refs
+	if node.IsScope || node.IsRef || node.Node == nil {
+		return m.padLines([]string{m.styles.dim.Render("No preview available")}, height)
+	}
+
+	// Calculate pane heights: reference context gets ~25% (min 5 lines), file content gets rest
+	refPaneHeight := height / 4
+	if refPaneHeight < 5 {
+		refPaneHeight = 5
+	}
+	if refPaneHeight > 10 {
+		refPaneHeight = 10 // Cap it so file content has enough space
+	}
+	filePaneHeight := height - refPaneHeight - 1 // -1 for separator
+
+	// Render reference context pane (top)
+	refPane := m.renderRefContextPane(node, width, refPaneHeight)
+
+	// Horizontal separator
+	separator := m.styles.separator.Render(strings.Repeat("─", width))
+
+	// Render file content pane (bottom)
+	filePane := m.renderFileContentPane(node, width, filePaneHeight)
+
+	return refPane + "\n" + separator + "\n" + filePane
+}
+
+// renderRefContextPane renders the reference context from the parent file
+func (m *GraphModel) renderRefContextPane(node *GraphNode, width, height int) string {
+	var lines []string
+
+	// Header
+	if len(node.SourceRefs) > 0 && node.Parent != nil && node.Parent.Node != nil {
+		parentPath, _ := filepath.Rel(m.rootPath, node.Parent.Node.Path)
+		header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" Referenced from: %s ", parentPath))
+		lines = append(lines, header)
+
+		// Show the context around the reference
+		ref := node.SourceRefs[0]
+		if ref.Context != "" {
+			contextLines := strings.Split(ref.Context, "\n")
+			refLineInContext := 2 // Context is typically 2 lines before, ref line, 2 lines after
+
+			for i, ctxLine := range contextLines {
+				if i >= height-1 {
+					break
+				}
+
+				// Calculate actual line number
+				actualLineNum := ref.Line - refLineInContext + i
+				if actualLineNum < 1 {
+					actualLineNum = i + 1
+				}
+
+				lineNum := fmt.Sprintf("%4d ", actualLineNum)
+
+				// Truncate if needed
+				maxContentWidth := width - 6
+				displayLine := ctxLine
+				if len(displayLine) > maxContentWidth {
+					displayLine = displayLine[:maxContentWidth-1] + "…"
+				}
+
+				// Highlight the reference line
+				if i == refLineInContext {
+					lines = append(lines, m.styles.highlightLine.Render(lineNum+displayLine))
+				} else {
+					lines = append(lines, m.styles.lineNum.Render(lineNum)+displayLine)
+				}
+			}
+		} else {
+			// No context, just show the reference text
+			lines = append(lines, m.styles.dim.Render(fmt.Sprintf("  L:%d  %s", ref.Line, ref.OriginalText)))
+		}
+	} else {
+		// No reference info (this is a root file)
+		header := m.styles.previewHeader.Width(width).Render(" Entrypoint (no parent reference) ")
+		lines = append(lines, header)
+		lines = append(lines, m.styles.dim.Render("  This file is a root configuration entrypoint"))
+	}
+
+	return m.padLines(lines, height)
+}
+
+// renderFileContentPane renders the actual file content
+func (m *GraphModel) renderFileContentPane(node *GraphNode, width, height int) string {
+	var lines []string
+
+	// Header showing filename
+	relPath, _ := filepath.Rel(m.rootPath, node.Node.Path)
+	header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" %s ", relPath))
+	lines = append(lines, header)
+
+	// Get file content
+	content := string(node.Node.Content)
+	if content == "" {
+		lines = append(lines, m.styles.dim.Render("  Empty file"))
+		return m.padLines(lines, height)
+	}
+
+	fileLines := strings.Split(content, "\n")
+
+	// Calculate start line based on scroll
+	startLine := m.previewScroll
+	maxScroll := len(fileLines) - (height - 1)
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if startLine > maxScroll {
+		startLine = maxScroll
+	}
+
+	// Render file content with line numbers
+	for i := startLine; i < startLine+height-1 && i < len(fileLines); i++ {
+		lineNum := fmt.Sprintf("%4d ", i+1)
+		lineContent := fileLines[i]
+
+		// Truncate if needed
+		maxContentWidth := width - 6
+		if len(lineContent) > maxContentWidth {
+			lineContent = lineContent[:maxContentWidth-1] + "…"
+		}
+
+		lines = append(lines, m.styles.lineNum.Render(lineNum)+lineContent)
+	}
+
+	return m.padLines(lines, height)
+}
+
+// padLines pads a slice of lines to fill the given height
+func (m *GraphModel) padLines(lines []string, height int) string {
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *GraphModel) renderTree() string {
@@ -454,7 +786,12 @@ func (m *GraphModel) renderNode(node *GraphNode, selected bool) string {
 		icon := m.fileIcon(node.Node)
 		content = icon + " " + m.styles.file.Render(relPath)
 
-		// Show reference count
+		// Show line number where this file was referenced (from SourceRefs)
+		if len(node.SourceRefs) > 0 {
+			content += m.styles.dim.Render(fmt.Sprintf(" (L:%d)", node.SourceRefs[0].Line))
+		}
+
+		// Show reference count if refs are hidden
 		if len(node.Node.References) > 0 && !m.showRefs {
 			content += m.styles.dim.Render(fmt.Sprintf(" [%d refs]", len(node.Node.References)))
 		}
@@ -537,8 +874,17 @@ func (m *GraphModel) renderDetailLine(node *GraphNode) string {
 		if node.Node.Parsed != nil {
 			category = node.Node.Parsed.Category.String()
 		}
-		return fmt.Sprintf(" %s  Refs: %d  Children: %d  Category: %s",
-			node.Node.Path, len(node.Node.References), len(node.Node.Children), category)
+
+		// Basic file info
+		info := fmt.Sprintf(" %s  Category: %s", node.Node.Path, category)
+
+		// Add reference source info if available
+		if len(node.SourceRefs) > 0 {
+			ref := node.SourceRefs[0]
+			info += fmt.Sprintf("  Referenced at L:%d as \"%s\"", ref.Line, ref.OriginalText)
+		}
+
+		return info
 	}
 	return ""
 }

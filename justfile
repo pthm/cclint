@@ -65,11 +65,91 @@ run-report: build
 
 # Build release binaries using GoReleaser (snapshot for local testing)
 release-snapshot:
-    goreleaser release --snapshot --clean
+    GITHUB_TOKEN=$(gh auth token) goreleaser release --snapshot --clean
 
-# Create a release (requires git tag)
-release:
-    goreleaser release --clean
+# Create and publish a release (e.g., just release 0.1.0)
+release VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VERSION="{{VERSION}}"
+
+    # Strip 'v' prefix if provided
+    VERSION="${VERSION#v}"
+    TAG="v${VERSION}"
+
+    # Validate version format (semver)
+    if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+        echo "Error: Invalid version format. Use semver (e.g., 0.1.0, 1.0.0-beta.1)"
+        exit 1
+    fi
+
+    # Check for uncommitted changes
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        echo "Error: You have uncommitted changes. Commit or stash them first."
+        exit 1
+    fi
+
+    # Check if tag already exists
+    if git rev-parse "$TAG" >/dev/null 2>&1; then
+        echo "Error: Tag $TAG already exists"
+        exit 1
+    fi
+
+    # Verify gh auth
+    if ! gh auth token >/dev/null 2>&1; then
+        echo "Error: Not authenticated with gh. Run 'gh auth login' first."
+        exit 1
+    fi
+
+    # Show what will be released
+    echo "Releasing $TAG"
+    echo ""
+    echo "Recent commits:"
+    git log --oneline -5
+    echo ""
+
+    # Confirm
+    read -p "Continue with release? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
+
+    # Create and push tag
+    git tag -a "$TAG" -m "Release $TAG"
+    git push origin "$TAG"
+
+    # Run GoReleaser
+    GITHUB_TOKEN=$(gh auth token) HOMEBREW_TAP_GITHUB_TOKEN=$(gh auth token) goreleaser release --clean
+
+    echo ""
+    echo "Release $TAG published!"
+
+# Delete a release tag (local and remote)
+release-delete VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VERSION="{{VERSION}}"
+    VERSION="${VERSION#v}"
+    TAG="v${VERSION}"
+
+    read -p "Delete tag $TAG locally and remotely? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
+
+    git tag -d "$TAG" 2>/dev/null || true
+    git push origin --delete "$TAG" 2>/dev/null || true
+    echo "Tag $TAG deleted."
+
+# Build release locally with GoReleaser (without publishing)
+release-local:
+    GITHUB_TOKEN=$(gh auth token) HOMEBREW_TAP_GITHUB_TOKEN=$(gh auth token) goreleaser release --clean --skip=publish
 
 # Setup development environment
 setup:
