@@ -1,0 +1,73 @@
+name: claude-code
+
+entrypoints:
+  - CLAUDE.md
+  - .claude/CLAUDE.md
+  - .claude/settings.json
+  - .claude/settings.local.json
+  - .mcp.json
+
+file_patterns:
+  - ".claude/**/*.md"
+  - ".claude/**/*.json"
+  - ".claude/commands/**/*"
+
+reference_patterns:
+  # @ file references (e.g., @src/file.ts)
+  - regex: '@([./][^\s\)>\]]+)'
+    type: file
+
+  # Relative file paths in quotes
+  - regex: '"(\./[^"]+)"'
+    type: file
+
+  # HTTP/HTTPS URLs
+  - regex: 'https?://[^\s\)>\]"''`]+'
+    type: url
+
+  # MCP server references
+  - regex: '"mcpServers":\s*\{[^}]*"([^"]+)"'
+    type: mcp_server
+
+  # Tool references in instructions
+  - regex: '\b(Read|Write|Edit|Bash|Glob|Grep|Task|WebFetch|WebSearch)\s+tool'
+    type: tool
+
+  # Subagent references
+  - regex: 'subagent[_-]?type["\s:=]+["\''`]?(\w+)'
+    type: subagent
+
+  # Skill references (slash commands)
+  - regex: '/(\w+[-\w]*)'
+    type: skill
+
+markers:
+  high_priority:
+    - "IMPORTANT"
+    - "CRITICAL"
+    - "MUST"
+    - "NEVER"
+    - "ALWAYS"
+    - "REQUIRED"
+    - "DO NOT"
+    - "WARNING"
+
+  medium_priority:
+    - "SHOULD"
+    - "RECOMMENDED"
+    - "PREFER"
+    - "NOTE"
+    - "TIP"
+    - "AVOID"
+
+  low_priority:
+    - "OPTIONAL"
+    - "CONSIDER"
+    - "MAY"
+    - "MIGHT"
+    - "COULD"
+
+  sections:
+    - "# "
+    - "## "
+    - "### "
