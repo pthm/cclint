@@ -1,9 +1,9 @@
 package rules
 
 import (
-	"github.com/pthm-cable/cclint/internal/agent"
-	"github.com/pthm-cable/cclint/internal/analyzer"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/agent"
+	"github.com/pthm/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // Severity represents the severity level of an issue

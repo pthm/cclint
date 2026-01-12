@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pthm-cable/cclint/internal/agent"
-	"github.com/pthm-cable/cclint/internal/analyzer"
-	"github.com/pthm-cable/cclint/internal/reporter"
-	"github.com/pthm-cable/cclint/internal/rules"
-	"github.com/pthm-cable/cclint/internal/ui"
+	"github.com/pthm/cclint/internal/agent"
+	"github.com/pthm/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/reporter"
+	"github.com/pthm/cclint/internal/rules"
+	"github.com/pthm/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 

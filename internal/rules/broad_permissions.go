@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // BroadPermissionsRule checks for overly broad permission configurations

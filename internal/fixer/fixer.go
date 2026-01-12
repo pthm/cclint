@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/rules"
-	"github.com/pthm-cable/cclint/internal/ui"
+	"github.com/pthm/cclint/internal/rules"
+	"github.com/pthm/cclint/internal/ui"
 )
 
 // Options configures the fixer behavior

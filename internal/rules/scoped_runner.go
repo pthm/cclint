@@ -1,8 +1,8 @@
 package rules
 
 import (
-	"github.com/pthm-cable/cclint/internal/analyzer"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // ScopeAnalyzeFunc is a function that analyzes a single context scope

@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/pthm-cable/cclint/internal/ui"
+	"github.com/pthm/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 

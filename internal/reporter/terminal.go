@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/pthm-cable/cclint/internal/rules"
-	"github.com/pthm-cable/cclint/internal/ui"
+	"github.com/pthm/cclint/internal/rules"
+	"github.com/pthm/cclint/internal/ui"
 )
 
 // TerminalReporter outputs results to the terminal with colors

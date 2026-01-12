@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/pthm-cable/cclint/internal/analyzer"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // LLMActionabilityRule detects instructions with low actionability using LLM analysis

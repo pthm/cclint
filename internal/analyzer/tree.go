@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/agent"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/agent"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // RefType represents the type of reference

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/fang"
-	"github.com/pthm-cable/cclint/internal/cmd"
+	"github.com/pthm/cclint/internal/cmd"
 )
 
 func main() {

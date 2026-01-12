@@ -1,7 +1,7 @@
 package analyzer
 
 import (
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // Metrics contains computed metrics about the configuration

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // VagueInstructionsRule checks for vague or unclear instructions

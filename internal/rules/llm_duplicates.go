@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/pthm-cable/cclint/internal/analyzer"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // LLMDuplicatesRule detects duplicate or near-duplicate instructions using LLM analysis

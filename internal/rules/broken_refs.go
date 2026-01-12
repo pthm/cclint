@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/analyzer"
 )
 
 // BrokenRefsRule checks for broken file and URL references

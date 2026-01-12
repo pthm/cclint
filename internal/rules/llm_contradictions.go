@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/pthm-cable/cclint/internal/analyzer"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/analyzer"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // LLMContradictionsRule detects contradicting instructions using LLM analysis

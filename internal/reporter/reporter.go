@@ -1,7 +1,7 @@
 package reporter
 
 import (
-	"github.com/pthm-cable/cclint/internal/rules"
+	"github.com/pthm/cclint/internal/rules"
 )
 
 // Reporter defines the interface for outputting lint results

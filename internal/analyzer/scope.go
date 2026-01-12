@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/agent"
+	"github.com/pthm/cclint/internal/agent"
 )
 
 // ScopeType represents the type of context scope

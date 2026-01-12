@@ -1,4 +1,4 @@
-module github.com/pthm-cable/cclint
+module github.com/pthm/cclint
 
 go 1.24.2
 

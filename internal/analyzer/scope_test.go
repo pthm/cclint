@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pthm-cable/cclint/internal/agent"
+	"github.com/pthm/cclint/internal/agent"
 )
 
 func TestScopeTypeString(t *testing.T) {

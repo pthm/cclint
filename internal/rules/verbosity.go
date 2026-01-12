@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // VerbosityRule checks for overly verbose or low-density instructions

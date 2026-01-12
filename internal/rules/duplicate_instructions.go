@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // DuplicateInstructionsRule checks for duplicate or near-duplicate instructions

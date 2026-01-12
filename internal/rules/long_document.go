@@ -3,7 +3,7 @@ package rules
 import (
 	"fmt"
 
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // LongDocumentRule checks for overly long configuration documents

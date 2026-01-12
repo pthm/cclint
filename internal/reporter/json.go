@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/pthm-cable/cclint/internal/rules"
+	"github.com/pthm/cclint/internal/rules"
 )
 
 // JSONReporter outputs results as JSON

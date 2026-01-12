@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	claudecode "github.com/severity1/claude-agent-sdk-go"
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // llmQualityMetrics holds quality assessment metrics from LLM analysis

@@ -3,7 +3,7 @@ package rules
 import (
 	"strings"
 
-	"github.com/pthm-cable/cclint/internal/parser"
+	"github.com/pthm/cclint/internal/parser"
 )
 
 // ContradictionsRule checks for potential contradictions in instructions
