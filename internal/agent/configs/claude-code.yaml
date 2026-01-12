@@ -14,8 +14,19 @@ file_patterns:
   - ".claude/agents/**/*.md"
 
 reference_patterns:
-  # @ file references (e.g., @src/file.ts)
-  - regex: '@([./][^\s\)>\]]+)'
+  # @ file references (e.g., @AGENTS.md, @src/file.ts, @./config.md)
+  # Requires @ at start of line or after whitespace/brackets, followed by filename with extension
+  - regex: '(?:^|[\s\(>\[])@([\w./][^\s\)>\]]+\.\w+)'
+    type: file
+
+  # Backtick-quoted absolute paths (e.g., `/CABLE.md`, `/.claude/config.md`)
+  # Excludes globs (*) and commands (spaces)
+  - regex: '`(/[^`*\s]+\.[a-zA-Z0-9]+)`'
+    type: file
+
+  # Backtick-quoted relative paths (e.g., `src/file.ts`, `./config.md`)
+  # Excludes globs (*) and commands (spaces)
+  - regex: '`([a-zA-Z.][^`*\s]*\.[a-zA-Z0-9]+)`'
     type: file
 
   # Relative file paths in quotes
@@ -38,8 +49,9 @@ reference_patterns:
   - regex: 'subagent[_-]?type["\s:=]+["\''`]?(\w+)'
     type: subagent
 
-  # Skill references (slash commands)
-  - regex: '/(\w+[-\w]*)'
+  # Skill references (slash commands) - lowercase only, must be word-bounded
+  # Matches /commit, /help, /review-pr but not /CABLE.md or /path/to/file
+  - regex: '(?:^|\s)/([a-z][-a-z0-9]*)(?:\s|$|[,!?;:])'
     type: skill
 
 markers:

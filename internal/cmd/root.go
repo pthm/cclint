@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/pthm/cclint/internal/ui"
+	"github.com/pthm/cclint/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -18,8 +20,9 @@ var (
 )
 
 var RootCmd = &cobra.Command{
-	Use:   "cclint",
-	Short: "A linter for Claude Code configurations",
+	Use:     "cclint",
+	Short:   "A linter for Claude Code configurations",
+	Version: version.Short(),
 	Long: `cclint analyzes Claude Code configurations and related files
 to identify issues, suggest improvements, and ensure best practices.
 
@@ -33,6 +36,7 @@ references, circular dependencies, and unclear instructions.`,
 }
 
 func init() {
+	RootCmd.SetVersionTemplate(fmt.Sprintf("%s\n", version.Info()))
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	RootCmd.PersistentFlags().StringVarP(&format, "format", "f", "terminal", "Output format (terminal, json)")
 	RootCmd.PersistentFlags().StringVarP(&agentType, "agent", "a", "claude-code", "Agent type to lint for")

@@ -63,13 +63,13 @@ run-deep: build
 run-report: build
     ./bin/cclint report .
 
-# Build release binaries for multiple platforms
-release: clean
-    GOOS=darwin GOARCH=amd64 go build {{ldflags}} -o bin/cclint-darwin-amd64 ./cmd/cclint
-    GOOS=darwin GOARCH=arm64 go build {{ldflags}} -o bin/cclint-darwin-arm64 ./cmd/cclint
-    GOOS=linux GOARCH=amd64 go build {{ldflags}} -o bin/cclint-linux-amd64 ./cmd/cclint
-    GOOS=linux GOARCH=arm64 go build {{ldflags}} -o bin/cclint-linux-arm64 ./cmd/cclint
-    GOOS=windows GOARCH=amd64 go build {{ldflags}} -o bin/cclint-windows-amd64.exe ./cmd/cclint
+# Build release binaries using GoReleaser (snapshot for local testing)
+release-snapshot:
+    goreleaser release --snapshot --clean
+
+# Create a release (requires git tag)
+release:
+    goreleaser release --clean
 
 # Setup development environment
 setup:

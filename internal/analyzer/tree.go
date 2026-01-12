@@ -97,14 +97,21 @@ type ConfigNode struct {
 
 // Tree represents the complete configuration tree
 type Tree struct {
-	Root  *ConfigNode
-	Nodes map[string]*ConfigNode // Path -> Node
+	Root     *ConfigNode
+	RootPath string                   // Absolute path to project root
+	Nodes    map[string]*ConfigNode // Path -> Node
 }
 
 // BuildTree builds a reference tree starting from the given path
 func BuildTree(rootPath string, agentConfig *agent.Config) (*Tree, error) {
+	absRoot, err := filepath.Abs(rootPath)
+	if err != nil {
+		return nil, err
+	}
+
 	tree := &Tree{
-		Nodes: make(map[string]*ConfigNode),
+		RootPath: absRoot,
+		Nodes:    make(map[string]*ConfigNode),
 	}
 
 	// Find entrypoints
@@ -176,13 +183,20 @@ func (t *Tree) processFile(path string, agentConfig *agent.Config, parent *Confi
 
 	// Process file references (don't go too deep)
 	if depth < 5 {
+		seenChildren := make(map[string]bool)
 		for i, ref := range node.References {
 			if ref.Type == RefTypeFile {
-				resolvedPath := resolveFilePath(path, ref.Value)
+				resolvedPath := resolveFilePath(t.RootPath, path, ref.Value)
 				node.References[i].Target = resolvedPath
 
 				if _, err := os.Stat(resolvedPath); err == nil {
 					node.References[i].Resolved = true
+
+					// Avoid duplicate children from multiple references to the same file
+					if seenChildren[resolvedPath] {
+						continue
+					}
+					seenChildren[resolvedPath] = true
 
 					// Process child file
 					child, err := t.processFile(resolvedPath, agentConfig, node, depth+1)
@@ -294,13 +308,29 @@ func getContext(lines []string, lineNum int, radius int) string {
 }
 
 // resolveFilePath resolves a relative file path
-func resolveFilePath(sourcePath, refPath string) string {
-	if filepath.IsAbs(refPath) {
-		return refPath
-	}
-
+func resolveFilePath(rootPath, sourcePath, refPath string) string {
 	// Remove @ prefix if present
 	refPath = strings.TrimPrefix(refPath, "@")
+
+	// Check if it's a project-root-relative path (starts with / but not an absolute filesystem path)
+	// e.g., `/CABLE.md` means rootPath/CABLE.md
+	if strings.HasPrefix(refPath, "/") {
+		// Try resolving relative to project root first
+		rootRelative := filepath.Join(rootPath, refPath)
+		if _, err := os.Stat(rootRelative); err == nil {
+			return filepath.Clean(rootRelative)
+		}
+
+		// If not found at root, check if it's actually an absolute path that exists
+		if filepath.IsAbs(refPath) {
+			if _, err := os.Stat(refPath); err == nil {
+				return refPath
+			}
+		}
+
+		// Default to root-relative even if not found (for error reporting)
+		return filepath.Clean(rootRelative)
+	}
 
 	// Resolve relative to source file's directory
 	sourceDir := filepath.Dir(sourcePath)
