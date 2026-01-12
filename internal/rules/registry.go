@@ -54,6 +54,8 @@ func DefaultRegistry() *Registry {
 	r.Register(&MissingEntrypointRule{})
 	r.Register(&BroadPermissionsRule{})
 	r.Register(&DuplicateInstructionsRule{})
+	r.Register(&MissingToolRule{})
+	r.Register(&MissingSkillRule{})
 
 	// Register content quality rules
 	r.Register(&VagueInstructionsRule{})

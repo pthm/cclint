@@ -125,6 +125,11 @@ func (ctx *AnalysisContext) FileByPath(path string) *analyzer.ConfigNode {
 	return ctx.Tree.Nodes[path]
 }
 
+// Scopes returns all context scopes discovered in the tree.
+func (ctx *AnalysisContext) Scopes() ([]*analyzer.ContextScope, error) {
+	return ctx.Tree.DiscoverScopes(ctx.AgentConfig, ctx.RootPath)
+}
+
 // RuleConfig defines how a rule should be invoked
 type RuleConfig struct {
 	// FileCategories specifies which file types this rule applies to.

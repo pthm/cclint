@@ -687,3 +687,149 @@ skills: ck-search, linear
 		t.Error("Expected 'linear' skill in reviewer.Children")
 	}
 }
+
+func TestExtractToolsFromFrontmatter(t *testing.T) {
+	tests := []struct {
+		name        string
+		frontmatter map[string]interface{}
+		expected    []string
+	}{
+		{
+			name:        "nil frontmatter",
+			frontmatter: nil,
+			expected:    nil,
+		},
+		{
+			name:        "no tools key",
+			frontmatter: map[string]interface{}{"name": "test"},
+			expected:    nil,
+		},
+		{
+			name:        "comma-separated string",
+			frontmatter: map[string]interface{}{"tools": "rg, jq, git"},
+			expected:    []string{"rg", "jq", "git"},
+		},
+		{
+			name:        "interface slice",
+			frontmatter: map[string]interface{}{"tools": []interface{}{"Read", "Write", "Bash"}},
+			expected:    []string{"Read", "Write", "Bash"},
+		},
+		{
+			name:        "string slice",
+			frontmatter: map[string]interface{}{"tools": []string{"npm", "node"}},
+			expected:    []string{"npm", "node"},
+		},
+		{
+			name:        "empty string",
+			frontmatter: map[string]interface{}{"tools": ""},
+			expected:    nil,
+		},
+		{
+			name:        "whitespace handling",
+			frontmatter: map[string]interface{}{"tools": "  rg  ,  jq  "},
+			expected:    []string{"rg", "jq"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractToolsFromFrontmatter(tt.frontmatter)
+
+			if len(got) != len(tt.expected) {
+				t.Errorf("extractToolsFromFrontmatter() returned %d tools, want %d", len(got), len(tt.expected))
+				return
+			}
+
+			for i, tool := range got {
+				if tool != tt.expected[i] {
+					t.Errorf("extractToolsFromFrontmatter()[%d] = %q, want %q", i, tool, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestDiscoverScopesWithDeclaredTools(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "tools-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dirs := []string{
+		".claude",
+		".claude/agents",
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0o755); err != nil {
+			t.Fatalf("Failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	files := map[string]string{
+		"CLAUDE.md": `# Main Agent
+Simple configuration.`,
+		".claude/agents/coder.md": `---
+name: coder
+tools: Read, Write, Bash, rg, jq
+skills: ck-search
+---
+# Coder Agent
+Uses tools for coding tasks.`,
+	}
+
+	for name, content := range files {
+		path := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", name, err)
+		}
+	}
+
+	agentConfig, err := agent.Load("claude-code")
+	if err != nil {
+		t.Fatalf("Failed to load agent config: %v", err)
+	}
+
+	tree, err := BuildTree(tmpDir, agentConfig)
+	if err != nil {
+		t.Fatalf("Failed to build tree: %v", err)
+	}
+
+	scopes, err := tree.DiscoverScopes(agentConfig, tmpDir)
+	if err != nil {
+		t.Fatalf("DiscoverScopes failed: %v", err)
+	}
+
+	// Find coder subagent scope
+	var coderScope *ContextScope
+	for _, scope := range scopes {
+		if scope.Type == ScopeTypeSubagent && scope.Name == "coder" {
+			coderScope = scope
+			break
+		}
+	}
+
+	if coderScope == nil {
+		t.Fatal("Expected coder subagent scope")
+	}
+
+	// Check DeclaredTools
+	expectedTools := []string{"Read", "Write", "Bash", "rg", "jq"}
+	if len(coderScope.DeclaredTools) != len(expectedTools) {
+		t.Errorf("DeclaredTools has %d items, want %d", len(coderScope.DeclaredTools), len(expectedTools))
+	}
+
+	for i, tool := range expectedTools {
+		if i >= len(coderScope.DeclaredTools) {
+			break
+		}
+		if coderScope.DeclaredTools[i] != tool {
+			t.Errorf("DeclaredTools[%d] = %q, want %q", i, coderScope.DeclaredTools[i], tool)
+		}
+	}
+
+	// Check DeclaredSkills
+	if len(coderScope.DeclaredSkills) != 1 || coderScope.DeclaredSkills[0] != "ck-search" {
+		t.Errorf("DeclaredSkills = %v, want [ck-search]", coderScope.DeclaredSkills)
+	}
+}

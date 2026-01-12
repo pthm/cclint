@@ -12,6 +12,43 @@ cclint includes an interactive browser to get an overview of all your context in
 <img width="3302" height="1874" alt="CleanShot 2026-01-12 at 11 54 02@2x" src="https://github.com/user-attachments/assets/b8c08482-8915-43f0-8eac-5ccad650a495" />
 
 
+## Installation
+
+### Homebrew
+
+```bash
+brew install pthm/tap/cclint
+```
+
+### Go Install
+
+```bash
+go install github.com/pthm/cclint/cmd/cclint@latest
+```
+
+## Usage
+
+```bash
+# Lint current directory
+cclint lint
+
+# Generate detailed report
+cclint report
+
+# Interactive configuration graph explorer
+cclint graph
+
+# Deep analysis with LLM (requires Claude Code CLI)
+cclint lint --deep
+
+# Show version
+cclint version
+```
+
+## Development
+
+See [CLAUDE.md](CLAUDE.md) for development commands and architecture details.
+
 ## Status
 
 Work in progress.

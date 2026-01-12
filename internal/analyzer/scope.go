@@ -58,6 +58,12 @@ type ContextScope struct {
 
 	// Children contains nested scopes (commands/skills for main, skills for subagents)
 	Children []*ContextScope
+
+	// DeclaredSkills contains skill names declared in frontmatter
+	DeclaredSkills []string
+
+	// DeclaredTools contains tool names declared in frontmatter
+	DeclaredTools []string
 }
 
 // DiscoverScopes finds all context scopes in the tree.
@@ -178,7 +184,7 @@ func (t *Tree) DiscoverScopes(agentConfig *agent.Config, rootPath string) ([]*Co
 		scopes = append([]*ContextScope{mainScope}, scopes...)
 	}
 
-	// For each subagent, find and attach declared skills from frontmatter
+	// For each subagent, find and attach declared skills/tools from frontmatter
 	for _, subagentScope := range scopes {
 		if subagentScope.Type != ScopeTypeSubagent {
 			continue
@@ -186,7 +192,10 @@ func (t *Tree) DiscoverScopes(agentConfig *agent.Config, rootPath string) ([]*Co
 
 		// Get the subagent's parsed file to read frontmatter
 		if node, exists := t.Nodes[subagentScope.Entrypoint]; exists && node.Parsed != nil {
+			// Extract and store declared skills
 			declaredSkills := extractSkillsFromFrontmatter(node.Parsed.Frontmatter)
+			subagentScope.DeclaredSkills = declaredSkills
+
 			for _, skillName := range declaredSkills {
 				// Find matching skill scope and add as child
 				for _, skill := range skills {
@@ -196,6 +205,9 @@ func (t *Tree) DiscoverScopes(agentConfig *agent.Config, rootPath string) ([]*Co
 					}
 				}
 			}
+
+			// Extract and store declared tools
+			subagentScope.DeclaredTools = extractToolsFromFrontmatter(node.Parsed.Frontmatter)
 		}
 	}
 
@@ -242,6 +254,48 @@ func extractSkillsFromFrontmatter(frontmatter map[string]interface{}) []string {
 	}
 
 	return skills
+}
+
+// extractToolsFromFrontmatter extracts tool names from frontmatter
+// Handles both comma-separated string and list formats:
+// - tools: tool1, tool2
+// - tools: [tool1, tool2]
+// - tools:
+//   - tool1
+//   - tool2
+func extractToolsFromFrontmatter(frontmatter map[string]interface{}) []string {
+	if frontmatter == nil {
+		return nil
+	}
+
+	toolsVal, ok := frontmatter["tools"]
+	if !ok {
+		return nil
+	}
+
+	var tools []string
+
+	switch v := toolsVal.(type) {
+	case string:
+		// Comma-separated: "tool1, tool2"
+		for _, s := range strings.Split(v, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				tools = append(tools, s)
+			}
+		}
+	case []interface{}:
+		// List: [tool1, tool2]
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				tools = append(tools, s)
+			}
+		}
+	case []string:
+		tools = v
+	}
+
+	return tools
 }
 
 // collectReachableNodes returns all nodes reachable from the given entrypoint

@@ -308,11 +308,12 @@ func getContext(lines []string, lineNum int, radius int) string {
 }
 
 // resolveFilePath resolves a relative file path
+// Claude configs typically use project-root-relative paths, so we try that first
 func resolveFilePath(rootPath, sourcePath, refPath string) string {
 	// Remove @ prefix if present
 	refPath = strings.TrimPrefix(refPath, "@")
 
-	// Check if it's a project-root-relative path (starts with / but not an absolute filesystem path)
+	// Check if it's a project-root-relative path (starts with /)
 	// e.g., `/CABLE.md` means rootPath/CABLE.md
 	if strings.HasPrefix(refPath, "/") {
 		// Try resolving relative to project root first
@@ -332,9 +333,23 @@ func resolveFilePath(rootPath, sourcePath, refPath string) string {
 		return filepath.Clean(rootRelative)
 	}
 
-	// Resolve relative to source file's directory
+	// For relative paths (no leading /), try project root first since Claude configs
+	// typically document paths relative to the project root
+	rootRelative := filepath.Join(rootPath, refPath)
+	if _, err := os.Stat(rootRelative); err == nil {
+		return filepath.Clean(rootRelative)
+	}
+
+	// Fall back to resolving relative to source file's directory
 	sourceDir := filepath.Dir(sourcePath)
-	return filepath.Clean(filepath.Join(sourceDir, refPath))
+	sourceRelative := filepath.Clean(filepath.Join(sourceDir, refPath))
+	if _, err := os.Stat(sourceRelative); err == nil {
+		return sourceRelative
+	}
+
+	// Neither exists - prefer project-root-relative for error reporting
+	// since that's the expected convention
+	return rootRelative
 }
 
 // NodeCount returns the total number of nodes in the tree

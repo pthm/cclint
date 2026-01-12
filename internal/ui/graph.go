@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -32,8 +33,12 @@ type GraphNode struct {
 	Parent     *GraphNode
 	RefType    analyzer.RefType // For reference nodes
 	IsRef      bool             // True if this is a reference (not a file)
+	IsBroken   bool             // True if this is an unresolved/broken reference
 	RefValue   string           // The reference value
 	RefContext string           // Context around the reference
+	RefLine    int              // Line number where the ref appears in parent
+	RefColumn  int              // Column number where the ref appears in parent
+	RefTarget  string           // Resolved target path (for file refs)
 	SourceRefs []RefSource      // Reference sources (merged from parent refs)
 }
 
@@ -223,9 +228,9 @@ func (m *GraphModel) buildNodes() {
 				}
 				scopeNode.Children = append(scopeNode.Children, childScopeNode)
 
-				// Add files in the nested scope
-				for _, configNode := range childScope.Nodes {
-					fileNode := m.buildFileNode(configNode, childScopeNode, 2)
+				// Only add the entrypoint file - its children are built recursively via buildFileNode
+				if entryNode, exists := m.tree.Nodes[childScope.Entrypoint]; exists {
+					fileNode := m.buildFileNode(entryNode, childScopeNode, 2)
 					childScopeNode.Children = append(childScopeNode.Children, fileNode)
 				}
 			}
@@ -274,9 +279,13 @@ func (m *GraphModel) buildFileNode(configNode *analyzer.ConfigNode, parent *Grap
 			}
 			refNode := &GraphNode{
 				IsRef:      true,
+				IsBroken:   ref.Type == analyzer.RefTypeFile && !ref.Resolved,
 				RefType:    ref.Type,
 				RefValue:   ref.Value,
 				RefContext: ref.Context,
+				RefLine:    ref.Source.Line,
+				RefColumn:  ref.Source.Column,
+				RefTarget:  ref.Target,
 				Depth:      depth + 1,
 				Parent:     node,
 			}
@@ -588,8 +597,18 @@ func (m *GraphModel) renderPreviewPanes(width, height int) string {
 
 	node := m.nodes[m.cursor]
 
-	// Can't preview scopes or refs
-	if node.IsScope || node.IsRef || node.Node == nil {
+	// Handle scope headers - no preview
+	if node.IsScope {
+		return m.padLinesWithWidth([]string{m.styles.dim.Render("No preview available")}, width, height)
+	}
+
+	// Handle reference nodes (show ref location and optionally target content)
+	if node.IsRef {
+		return m.renderRefPreviewPanes(node, width, height)
+	}
+
+	// Handle file nodes without a ConfigNode
+	if node.Node == nil {
 		return m.padLinesWithWidth([]string{m.styles.dim.Render("No preview available")}, width, height)
 	}
 
@@ -717,6 +736,172 @@ func (m *GraphModel) renderFileContentPane(node *GraphNode, width, height int) s
 	return m.padLinesWithWidth(lines, width, height)
 }
 
+// renderRefPreviewPanes renders preview for a reference node
+func (m *GraphModel) renderRefPreviewPanes(node *GraphNode, width, height int) string {
+	// Calculate pane heights
+	refPaneHeight := height / 4
+	if refPaneHeight < 5 {
+		refPaneHeight = 5
+	}
+	if refPaneHeight > 10 {
+		refPaneHeight = 10
+	}
+	targetPaneHeight := height - refPaneHeight - 1
+
+	// Top pane: show where the ref appears in the parent file
+	refPane := m.renderRefSourcePane(node, width, refPaneHeight)
+
+	// Horizontal separator
+	separator := m.styles.separator.Render(strings.Repeat("─", width))
+
+	// Bottom pane: for file refs, show target content or broken message
+	var targetPane string
+	if node.RefType == analyzer.RefTypeFile {
+		targetPane = m.renderRefTargetPane(node, width, targetPaneHeight)
+	} else {
+		// For non-file refs (URLs, tools, etc.), just show ref info
+		var lines []string
+		header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" %s: %s ", node.RefType.String(), node.RefValue))
+		lines = append(lines, header)
+		lines = append(lines, "")
+		lines = append(lines, m.styles.dim.Render("  No file preview available for this reference type"))
+		targetPane = m.padLinesWithWidth(lines, width, targetPaneHeight)
+	}
+
+	return refPane + "\n" + separator + "\n" + targetPane
+}
+
+// renderRefSourcePane renders where the reference appears in the parent file
+func (m *GraphModel) renderRefSourcePane(node *GraphNode, width, height int) string {
+	var lines []string
+
+	// Get parent file info
+	if node.Parent != nil && node.Parent.Node != nil {
+		parentPath, _ := filepath.Rel(m.rootPath, node.Parent.Node.Path)
+		header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" Reference in: %s ", parentPath))
+		lines = append(lines, header)
+
+		// Show the context around the reference
+		if node.RefContext != "" {
+			contextLines := strings.Split(node.RefContext, "\n")
+			refLineInContext := 2 // Context is typically 2 lines before, ref line, 2 lines after
+
+			for i, ctxLine := range contextLines {
+				if i >= height-1 {
+					break
+				}
+
+				// Calculate actual line number
+				actualLineNum := node.RefLine - refLineInContext + i
+				if actualLineNum < 1 {
+					actualLineNum = i + 1
+				}
+
+				lineNum := fmt.Sprintf("%4d ", actualLineNum)
+
+				// Truncate if needed
+				maxContentWidth := width - 6
+				displayLine := ctxLine
+				if len(displayLine) > maxContentWidth {
+					displayLine = displayLine[:maxContentWidth-1] + "…"
+				}
+
+				// Highlight the reference line
+				if i == refLineInContext {
+					lines = append(lines, m.styles.highlightLine.Render(lineNum+displayLine))
+				} else {
+					lines = append(lines, m.styles.lineNum.Render(lineNum)+displayLine)
+				}
+			}
+		} else {
+			// No context, just show the reference info
+			lines = append(lines, m.styles.dim.Render(fmt.Sprintf("  L:%d  %s", node.RefLine, node.RefValue)))
+		}
+	} else {
+		header := m.styles.previewHeader.Width(width).Render(" Reference location ")
+		lines = append(lines, header)
+		lines = append(lines, m.styles.dim.Render(fmt.Sprintf("  L:%d  %s", node.RefLine, node.RefValue)))
+	}
+
+	return m.padLinesWithWidth(lines, width, height)
+}
+
+// renderRefTargetPane renders the target file content for a file reference
+func (m *GraphModel) renderRefTargetPane(node *GraphNode, width, height int) string {
+	var lines []string
+
+	if node.IsBroken {
+		// Broken reference - file doesn't exist
+		header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" ❌ %s (not found) ", node.RefValue))
+		lines = append(lines, header)
+		lines = append(lines, "")
+		lines = append(lines, m.styles.dim.Render("  This file reference could not be resolved."))
+		lines = append(lines, "")
+		if node.RefTarget != "" {
+			relTarget, _ := filepath.Rel(m.rootPath, node.RefTarget)
+			lines = append(lines, m.styles.dim.Render(fmt.Sprintf("  Resolved path: %s", relTarget)))
+		}
+		lines = append(lines, "")
+		lines = append(lines, m.styles.dim.Render("  Check that the path is correct and the file exists."))
+		return m.padLinesWithWidth(lines, width, height)
+	}
+
+	// Try to read the target file
+	targetPath := node.RefTarget
+	if targetPath == "" {
+		header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" %s ", node.RefValue))
+		lines = append(lines, header)
+		lines = append(lines, m.styles.dim.Render("  No target path available"))
+		return m.padLinesWithWidth(lines, width, height)
+	}
+
+	content, err := os.ReadFile(targetPath)
+	if err != nil {
+		header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" ❌ %s ", node.RefValue))
+		lines = append(lines, header)
+		lines = append(lines, m.styles.dim.Render(fmt.Sprintf("  Error reading file: %s", err.Error())))
+		return m.padLinesWithWidth(lines, width, height)
+	}
+
+	// Show file content
+	relPath, _ := filepath.Rel(m.rootPath, targetPath)
+	header := m.styles.previewHeader.Width(width).Render(fmt.Sprintf(" %s ", relPath))
+	lines = append(lines, header)
+
+	if len(content) == 0 {
+		lines = append(lines, m.styles.dim.Render("  Empty file"))
+		return m.padLinesWithWidth(lines, width, height)
+	}
+
+	fileLines := strings.Split(string(content), "\n")
+
+	// Calculate start line based on scroll
+	startLine := m.previewScroll
+	maxScroll := len(fileLines) - (height - 1)
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if startLine > maxScroll {
+		startLine = maxScroll
+	}
+
+	// Render file content with line numbers
+	for i := startLine; i < startLine+height-1 && i < len(fileLines); i++ {
+		lineNum := fmt.Sprintf("%4d ", i+1)
+		lineContent := fileLines[i]
+
+		// Truncate if needed
+		maxContentWidth := width - 6
+		if len(lineContent) > maxContentWidth {
+			lineContent = lineContent[:maxContentWidth-1] + "…"
+		}
+
+		lines = append(lines, m.styles.lineNum.Render(lineNum)+lineContent)
+	}
+
+	return m.padLinesWithWidth(lines, width, height)
+}
+
 // padLines pads a slice of lines to fill the given height
 func (m *GraphModel) padLines(lines []string, height int) string {
 	for len(lines) < height {
@@ -810,9 +995,18 @@ func (m *GraphModel) renderNode(node *GraphNode, selected bool) string {
 			content += m.styles.dim.Render(fmt.Sprintf(" (%s)", relPath))
 		}
 	} else if node.IsRef {
-		icon := m.refIcon(node.RefType)
+		var icon string
+		if node.IsBroken {
+			icon = "❌"
+		} else {
+			icon = m.refIcon(node.RefType)
+		}
 		style := m.refStyle(node.RefType)
 		content = icon + " " + style.Render(node.RefValue)
+		// Show line number for refs
+		if node.RefLine > 0 {
+			content += m.styles.dim.Render(fmt.Sprintf(" (L:%d)", node.RefLine))
+		}
 	} else if node.Node != nil {
 		relPath, err := filepath.Rel(m.rootPath, node.Node.Path)
 		if err != nil {

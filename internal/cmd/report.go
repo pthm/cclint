@@ -6,7 +6,6 @@ import (
 
 	"github.com/pthm/cclint/internal/agent"
 	"github.com/pthm/cclint/internal/analyzer"
-	"github.com/pthm/cclint/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -16,10 +15,11 @@ var reportCmd = &cobra.Command{
 	Long: `Generate a comprehensive report of your Claude Code setup.
 
 This includes:
-  - Configuration file tree
   - Reference map
   - Token usage estimates
   - Quality metrics
+
+Use 'cclint graph --print' to see the configuration tree.
 
 Examples:
   cclint report .
@@ -80,11 +80,6 @@ func runReport(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Agent: %s\n", agentConfig.Name)
 	fmt.Printf("Root:  %s\n\n", absPath)
 
-	// Print tree structure
-	fmt.Println(u.Styles.Warning.Render("Configuration Tree:"))
-	printTree(tree, u)
-	fmt.Println()
-
 	// Print metrics
 	fmt.Println(u.Styles.Warning.Render("Metrics:"))
 	metrics := analyzer.ComputeMetrics(tree)
@@ -101,9 +96,4 @@ func runReport(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-// printTree prints the configuration tree with UI styling
-func printTree(tree *analyzer.Tree, u *ui.UI) {
-	tree.PrintTree()
 }
