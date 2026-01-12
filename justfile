@@ -13,6 +13,14 @@ default:
 build:
     go build {{ldflags}} -o bin/cclint ./cmd/cclint
 
+# Build and sign the binary (macOS only)
+build-signed: build
+    ./scripts/sign-macos.sh bin/cclint
+
+# Build, sign, and notarize the binary (macOS only, requires 1Password)
+build-notarized: build
+    ./scripts/sign-macos.sh bin/cclint --notarize
+
 # Install to $GOPATH/bin (or $HOME/go/bin if GOPATH unset)
 install:
     go build {{ldflags}} -o $(go env GOPATH)/bin/cclint ./cmd/cclint

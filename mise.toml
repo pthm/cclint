@@ -1,3 +1,5 @@
 [tools]
+1password-cli = "latest"
 go = "1.22"
 just = "latest"
+"ubi:anchore/quill" = "latest"
