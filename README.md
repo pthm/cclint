@@ -1,3 +1,5 @@
+<img width="128" alt="cclint" src="https://github.com/user-attachments/assets/ed1ff742-1f80-4ff3-87ba-81802b70fd96" />
+
 # cclint
 
 A comprehensive linter and analyzer for [Claude Code](https://claude.com/code) configurations. Keep your agent instructions clean, consistent, and effective by catching issues before they impact your workflow.
